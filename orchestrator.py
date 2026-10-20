@@ -27,10 +27,12 @@ def _fill_orders(c, day, open_px, close_prev):
     pos = paper.positions()
     fee_rate = config.COSTS["commission_pct"] + config.COSTS["slippage_pct"]
     for o in rows:
-        decided = pd.Timestamp(o["decided_at"][:10])
-        if day <= decided:
+        # decided_at เป็นเวลาไทย → แปลงเป็นเวลานิวยอร์ก แล้วเทรดได้ที่ราคาเปิด (09:30 NY) แรกหลังเวลาอนุมัติ
+        decided = pd.Timestamp(o["decided_at"]).tz_localize("Asia/Bangkok").tz_convert("America/New_York")
+        first_day = decided.date() if (decided.hour, decided.minute) < (9, 30) else (decided + pd.Timedelta(days=1)).date()
+        if day.date() < first_day:
             continue
-        age = np.busday_count(decided.date(), day.date())
+        age = np.busday_count(first_day, day.date())
         if age > config.APPROVAL_EXPIRE_DAYS:
             c.execute("UPDATE orders SET status='expired', note=? WHERE id=?", ("อนุมัติแล้วแต่ไม่ได้เทรดภายในกำหนด", o["id"]))
             continue
