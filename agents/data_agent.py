@@ -19,7 +19,9 @@ def fetch_yfinance(start=config.DATA_START):
     close, open_ = raw["Close"].copy(), raw["Open"].copy()
     fx = close.pop(config.FX_TICKER)
     open_ = open_.drop(columns=[config.FX_TICKER], errors="ignore")
-    return {"close": close, "open": open_, "fx": fx}
+    # ค่าเงิน (THB=X) ซื้อขาย 24 ชม. ทำให้มีแถวของวันที่ตลาดสหรัฐไม่ได้เปิด → เก็บเฉพาะวันที่ SPY มีราคาจริง
+    us_day = close[config.BENCHMARK].notna()
+    return {"close": close[us_day], "open": open_[us_day], "fx": fx.ffill()[us_day]}
 
 
 def synthetic(start="2012-01-02", years=14, seed=11, drift=True):
