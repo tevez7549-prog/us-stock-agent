@@ -1,5 +1,6 @@
 """สำรองข้อมูลจาก Cloudflare D1 ลงคอม → data/backup/us-stock-YYYY-MM-DD.db (SQLite เปิดดูด้วย DB Browser ได้)
-ใช้: ตั้ง WORKER_URL และ AGENT_TOKEN ในไฟล์ .env แล้วรัน backup.bat (หรือตั้ง Task Scheduler ทุกคืน)
+ใช้: ดับเบิลคลิก backup.bat (หรือตั้ง Task Scheduler ทุกคืน)
+รหัสอ่านจาก AGENT_TOKEN ใน .env หรือไฟล์ .agent_token ในโฟลเดอร์นี้ (ไฟล์ทั้งสองไม่ขึ้น GitHub)
 """
 import os
 import sqlite3
@@ -13,9 +14,15 @@ TABLES = ["state", "positions", "packets", "orders", "equity", "journal", "backt
 KEEP = 60  # เก็บไฟล์สำรองล่าสุด 60 ไฟล์
 
 
+WORKER_URL = "https://us-stock-agent.tevez7549.workers.dev"
+
+
 def main():
+    if not os.environ.get("AGENT_TOKEN") and os.path.exists(".agent_token"):
+        os.environ["AGENT_TOKEN"] = open(".agent_token").read().strip()
+    os.environ.setdefault("WORKER_URL", WORKER_URL)
     if not paper.remote():
-        sys.exit("ยังไม่ได้ตั้ง WORKER_URL / AGENT_TOKEN ในไฟล์ .env")
+        sys.exit("ไม่พบรหัส: ใส่ AGENT_TOKEN ใน .env หรือวางไฟล์ .agent_token ไว้ในโฟลเดอร์นี้")
     src = paper.conn()
     os.makedirs("data/backup", exist_ok=True)
     path = f"data/backup/us-stock-{date.today()}.db"
