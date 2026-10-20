@@ -49,6 +49,16 @@ def synthetic(start="2012-01-02", years=14, seed=11, drift=True):
             "fx": pd.Series(fx, index=dates)}
 
 
+def drop_unfinished_day(d, now=None):
+    """ตัดแท่งของวันที่ตลาดสหรัฐยังไม่ปิด (ก่อน 16:30 เวลานิวยอร์ก) — ราคาระหว่างวันไม่ใช่ราคาปิด"""
+    from zoneinfo import ZoneInfo
+    ny = (now or pd.Timestamp.now(tz="UTC")).tz_convert(ZoneInfo("America/New_York"))
+    last = d["close"].index[-1]
+    if last.date() == ny.date() and (ny.hour, ny.minute) < (16, 30):
+        d = {k: v.iloc[:-1] if hasattr(v, "iloc") else v for k, v in d.items()}
+    return d
+
+
 def clean(d):
     """เติมช่องว่างสั้นๆ (≤3 วัน) ไม่เติมยาว ไม่เติมย้อนหลัง (กันข้อมูลอนาคตรั่ว)"""
     out = {}
@@ -97,7 +107,7 @@ def load(source="auto", refresh=False, allow_synthetic=True):
         if fresh or source == "cache":
             return clean(cached), "cache"
     try:
-        d = fetch_yfinance()
+        d = drop_unfinished_day(fetch_yfinance())
         pd.to_pickle(d, CACHE)
         return clean(d), "yfinance"
     except Exception as e:
