@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>US Stock Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{--bg:#0e1116;--panel:#151a21;--line:#242b35;--text:#e6e9ee;--mute:#8a94a3;--up:#22c38e;--down:#f0596a;--accent:#5b9dff;--warn:#f2b84b}
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 "IBM Plex Sans Thai",system-ui,sans-serif}
+  .mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+  header{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+  header h1{font-size:16px;margin:0;font-weight:600;margin-right:8px}
+  nav{display:flex;gap:4px;flex-wrap:wrap}
+  nav button{background:transparent;border:1px solid transparent;color:var(--mute);font-weight:500}
+  nav button.on{color:var(--text);border-color:var(--line);background:var(--panel)}
+  nav .dot{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--warn);color:#000;font-size:11px;text-align:center}
+  .badge{padding:2px 8px;border-radius:4px;font-size:12px;border:1px solid var(--line);color:var(--mute);white-space:nowrap}
+  .badge.warn{border-color:var(--warn);color:var(--warn)} .badge.ok{border-color:var(--up);color:var(--up)} .badge.bad{border-color:var(--down);color:var(--down)}
+  .live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--up);margin-right:6px;animation:p 2s infinite} @keyframes p{50%{opacity:.3}}
+  select,input,button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+  button{cursor:pointer} button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+  button.danger{border-color:var(--down);color:var(--down)} button.good{border-color:var(--up);color:var(--up)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  main{padding:16px 20px;max-width:1400px;margin:0 auto}
+  @media(max-width:600px){main{padding:12px 16px}header{padding:10px 16px}}
+  section{display:none} section.on{display:flex;flex-direction:column;gap:16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+  .panel h2{font-size:12px;font-weight:500;color:var(--mute);margin:0 0 10px;letter-spacing:.03em}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .kpi .k{color:var(--mute);font-size:12px} .kpi .v{font-size:20px;font-weight:500;margin-top:2px} .kpi .s{color:var(--mute);font-size:12px}
+  .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--mute)}
+  .chart{height:340px} @media(max-width:600px){.chart{height:260px}}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th{color:var(--mute);font-weight:500}
+  td.l,th.l{text-align:left} td.wrap{white-space:normal;text-align:left;min-width:220px}
+  .scroll{overflow:auto}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px} @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .report{white-space:pre-wrap;font-size:14px;line-height:1.7}
+  .alert{border:1px solid var(--warn);color:var(--warn);background:rgba(242,184,75,.07);border-radius:8px;padding:10px 14px;font-size:13px}
+  .alert.bad{border-color:var(--down);color:var(--down);background:rgba(240,89,106,.07)}
+  .ticket{white-space:pre-wrap;background:var(--bg);border:1px dashed var(--line);border-radius:6px;padding:10px;font-size:13px}
+  .st{font-size:12px;padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+  .st.proposed,.st.held,.st.awaiting{color:var(--warn);border-color:var(--warn)} .st.approved{color:var(--accent);border-color:var(--accent)}
+  .st.filled,.st.decided{color:var(--up);border-color:var(--up)} .st.rejected,.st.cancelled,.st.blocked{color:var(--down);border-color:var(--down)}
+  .st.expired,.st.no_action{color:var(--mute)}
+  #login{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+  #login form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px;width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px}
+  #login h2{margin:0;font-size:18px}
+</style>
+</head>
+<body>
+<div id="login" hidden>
+  <form id="loginForm">
+    <h2>US Stock Agent</h2>
+    <input id="pw" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" required>
+    <button class="primary" type="submit">เข้าสู่ระบบ</button>
+    <div id="loginErr" class="down" style="font-size:13px"></div>
+  </form>
+</div>
+
+<header>
+  <h1>US Stock Agent</h1>
+  <nav>
+    <button data-tab="ov" class="on">ภาพรวม</button>
+    <button data-tab="dec">ตัดสินใจ<span id="pendDot" class="dot" hidden></span></button>
+    <button data-tab="bt">Backtest</button>
+    <button data-tab="jr">Journal</button>
+    <button data-tab="st">ตั้งค่า</button>
+  </nav>
+  <span style="flex:1"></span>
+  <span class="badge" id="liveBadge" hidden></span>
+  <span class="badge" id="srcBadge">—</span>
+  <span class="badge" id="runBadge">—</span>
+  <button id="btnLogout" style="padding:3px 8px;font-size:12px">ออก</button>
+</header>
+
+<main>
+<!-- ============ ภาพรวม ============ -->
+<section id="ov" class="on">
+  <div id="ovWarn" class="alert" hidden></div>
+  <div class="kpis" id="ovKpi"></div>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <h2 style="margin:0">พอร์ตจำลอง vs ถือ SPY เฉยๆ (USD, ราคาปิด)</h2>
+      <div class="row">
+        <button id="btnDaily" hidden>สั่งรันรายวัน</button>
+        <button id="btnWeekly" class="primary" hidden>สร้างแพ็กเกจตอนนี้</button>
+        <button id="btnKill" class="danger">Kill switch</button>
+      </div>
+    </div>
+    <div id="ovChart" class="chart"></div>
+  </div>
+  <div class="panel"><h2 id="posTitle">สิ่งที่ถืออยู่</h2><div class="scroll"><table id="posTbl"></table></div></div>
+</section>
+
+<!-- ============ ตัดสินใจ ============ -->
+<section id="dec">
+  <div class="row"><select id="pktSel"></select><span id="pktStatus"></span></div>
+  <div id="decAlert" class="alert" hidden></div>
+  <div class="panel"><h2>สรุปจากผู้แปลผล</h2><div id="report" class="report"></div></div>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <h2 style="margin:0">ออเดอร์ที่เสนอ</h2>
+      <div class="row"><button id="btnApproveAll" class="good">อนุมัติทั้งหมด</button><button id="btnRejectAll" class="danger">ปฏิเสธทั้งหมด</button></div>
+    </div>
+    <div class="scroll"><table id="ordTbl"></table></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h2>ใบสั่งสำหรับกดใน Dime (เมื่อใช้เงินจริง)</h2><div id="ticket" class="ticket mono"></div>
+      <button id="btnCopy" style="margin-top:8px">คัดลอก</button></div>
+    <div class="panel"><h2>พอร์ตเป้าหมายหลังปรับ</h2><table id="tgtTbl" class="mono"></table></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h2>อันดับโมเมนตัม (เอเจนต์ 4)</h2><table id="rankTbl" class="mono"></table></div>
+    <div class="panel"><h2>ผู้ตรวจสอบ (เอเจนต์ 10)</h2><div id="auditBox"></div></div>
+  </div>
+</section>
+
+<!-- ============ Backtest ============ -->
+<section id="bt">
+  <div id="btInfo" class="muted" style="font-size:13px"></div>
+  <div class="kpis" id="btKpi"></div>
+  <div class="panel"><h2>Equity: กลยุทธ์ vs SPY (USD, log scale)</h2><div id="btChart" class="chart"></div></div>
+  <div class="grid2">
+    <div class="panel"><h2>เทียบช่วง</h2><table id="btCmp" class="mono"></table></div>
+    <div class="panel"><h2>รายปี (%)</h2><div class="scroll" style="max-height:320px"><table id="btYear" class="mono"></table></div></div>
+  </div>
+  <div class="panel"><h2>ความทนทาน (ปรับพารามิเตอร์รอบค่าตั้งต้น)</h2><table id="robTbl" class="mono"></table>
+    <div class="muted" style="font-size:12px;margin-top:8px">ทุกแถวควรได้ผลไปทางเดียวกัน ถ้าแถวไหนแย่กว่าแถวอื่นมาก แปลว่ากลยุทธ์ไวต่อตัวเลขเกินไป (overfit)</div></div>
+</section>
+
+<!-- ============ ตั้งค่า ============ -->
+<section id="st">
+  <div class="grid2">
+    <div class="panel">
+      <h2>ราคาสด (Finnhub)</h2>
+      <div class="muted" style="font-size:13px;margin-bottom:10px">สมัครฟรีที่ finnhub.io แล้ววาง API key ที่นี่ · เก็บไว้ใน D1 ฝั่งเซิร์ฟเวอร์ ไม่ส่งกลับมาที่เบราว์เซอร์</div>
+      <div id="fhState" style="font-size:13px;margin-bottom:8px"></div>
+      <div class="row"><input id="fhKey" type="password" placeholder="Finnhub API key" autocomplete="off" style="flex:1;min-width:200px">
+        <button id="btnFh" class="primary">บันทึก</button><button id="btnFhDel">ลบ</button></div>
+    </div>
+    <div class="panel">
+      <h2>เปลี่ยนรหัสผ่านเข้าเว็บ</h2>
+      <form id="pwForm" style="display:flex;flex-direction:column;gap:8px;max-width:320px">
+        <input id="pwCur" type="password" placeholder="รหัสผ่านเดิม" autocomplete="current-password" required>
+        <input id="pwNew" type="password" placeholder="รหัสผ่านใหม่ (8 ตัวขึ้นไป)" autocomplete="new-password" minlength="8" required>
+        <button class="primary" type="submit">เปลี่ยนรหัสผ่าน</button>
+        <div id="pwMsg" style="font-size:13px"></div>
+      </form>
+      <div class="muted" style="font-size:12px;margin-top:8px">เปลี่ยนแล้วเครื่องอื่นที่ล็อกอินอยู่จะถูกออกจากระบบ</div>
+    </div>
+  </div>
+  <div class="panel"><h2>รอบการทำงานของเอเจนต์</h2>
+    <div style="font-size:13px;line-height:1.8">อังคาร–เสาร์ 06:30 · อัปเดตราคาปิด เทรดออเดอร์ที่อนุมัติ บันทึกมูลค่าพอร์ต<br>เสาร์ 09:00 · สร้างแพ็กเกจตัดสินใจ + อัปเดต backtest<br>
+    <span class="muted">รันล่าสุด: <span id="lastRun">—</span></span></div></div>
+</section>
+
+<!-- ============ Journal ============ -->
+<section id="jr">
+  <div class="panel"><h2>บันทึกทุกการตัดสินใจ</h2><div class="scroll"><table id="jrTbl"></table></div></div>
+</section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+async function api(u, body){
+  const r = await fetch(u, body ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {});
+  if (r.status === 401 && u !== "/api/login"){ showLogin(); throw new Error("ต้องเข้าสู่ระบบ"); }
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
+}
+const fmt = (n, d=2) => n == null || isNaN(n) ? "—" : Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const pct = (n, d=1) => n == null ? "—" : `${n>0?"+":""}${fmt(n*100,d)}%`;
+const cls = n => n > 0 ? "up" : n < 0 ? "down" : "";
+const KIND = {etf:"ETF",stock:"หุ้น",defensive:"ป้องกัน",cash:"เงินสด"};
+const REG = {risk_on:["ขาขึ้น","ok"],caution:["ระวัง","warn"],risk_off:["ขาลง","bad"]};
+const ST = {proposed:"รอตัดสินใจ",approved:"อนุมัติแล้ว รอเทรด",filled:"เทรดแล้ว",rejected:"ปฏิเสธ",expired:"หมดอายุ",held:"พักไว้",cancelled:"ยกเลิก",blocked:"ถูกบล็อก",
+            awaiting:"รอตัดสินใจ",decided:"ตัดสินใจครบ",no_action:"ไม่ต้องเทรด"};
+let UNI = {};
+async function guard(btn, fn){ btn.disabled = true; const t = btn.textContent; btn.textContent = "กำลังทำงาน…"; try{ await fn(); }catch(e){ alert(e.message); } btn.disabled = false; btn.textContent = t; }
+
+// ---------- login
+function showLogin(){ $("login").hidden = false; $("pw").focus(); }
+$("loginForm").onsubmit = async e => { e.preventDefault(); $("loginErr").textContent = "";
+  try{ await api("/api/login",{password:$("pw").value}); $("login").hidden = true; $("pw").value = ""; boot(); }catch(err){ $("loginErr").textContent = err.message; } };
+$("btnLogout").onclick = async () => { await fetch("/api/logout",{method:"POST"}); showLogin(); };
+
+const chartOpts = {layout:{background:{color:"transparent"},textColor:"#8a94a3",fontFamily:"JetBrains Mono"},
+  grid:{vertLines:{color:"#1c222b"},horzLines:{color:"#1c222b"}},rightPriceScale:{borderColor:"#242b35"},
+  timeScale:{borderColor:"#242b35"},localization:{locale:"en-US"},autoSize:true};
+const mk = (el, log) => { const c = LightweightCharts.createChart($(el), {...chartOpts, rightPriceScale:{...chartOpts.rightPriceScale, mode: log?1:0}});
+  return {c, a:c.addLineSeries({color:"#5b9dff",lineWidth:2,title:"กลยุทธ์"}), b:c.addLineSeries({color:"#8a94a3",lineWidth:1,lineStyle:2,title:"SPY"})}; };
+const ovC = mk("ovChart"), btC = mk("btChart", true);
+
+// ---------- tabs
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
+  if (b.dataset.tab === "dec") loadPackets(); if (b.dataset.tab === "jr") loadJournal(); if (b.dataset.tab === "bt") loadBt(); if (b.dataset.tab === "st") loadSettings();
+});
+
+// ---------- ตลาดสหรัฐเปิดไหม (ไม่นับวันหยุดนักขัตฤกษ์)
+function usMarketOpen(){
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short",hour:"numeric",minute:"numeric",hour12:false}).formatToParts(new Date()).map(x=>[x.type,x.value]));
+  const m = (Number(p.hour)%24)*60 + Number(p.minute);
+  return !["Sat","Sun"].includes(p.weekday) && m >= 570 && m < 960;
+}
+
+// ---------- ภาพรวม
+let S = null, LIVE = {};
+async function loadStatus(){
+  S = await api("/api/status"); UNI = S.universe || {};
+  $("srcBadge").textContent = S.last_data ? `ข้อมูลปิด ${S.last_data}` : "ยังไม่มีข้อมูล";
+  $("srcBadge").className = "badge " + (S.last_data ? "ok" : "warn");
+  $("runBadge").textContent = S.paused ? "โหมดพัก" : "ทำงาน"; $("runBadge").className = "badge " + (S.paused ? "bad" : "ok");
+  $("btnKill").textContent = S.paused ? "ทำงานต่อ" : "Kill switch"; $("btnKill").className = S.paused ? "good" : "danger";
+  $("btnDaily").hidden = $("btnWeekly").hidden = !S.can_run;
+  $("pendDot").hidden = !S.pending; $("pendDot").textContent = S.pending;
+  const w = [];
+  if (!S.last_data) w.push("ยังไม่มีข้อมูล — เอเจนต์จะรันครั้งแรกตามเวลาที่ตั้งไว้ (หรือสั่งรันใน GitHub Actions)");
+  if (S.pending) w.push(`มี ${S.pending} ออเดอร์รอคุณตัดสินใจ → แท็บ "ตัดสินใจ"`);
+  $("ovWarn").hidden = !w.length; $("ovWarn").innerHTML = w.join("<br>");
+  const e = S.equity; ovC.a.setData(e.map(x => ({time:x.date,value:x.usd}))); ovC.b.setData(e.map(x => ({time:x.date,value:x.bench_usd}))); ovC.c.timeScale().fitContent();
+  render();
+  refreshQuotes();
+}
+function render(){
+  if (!S) return;
+  const px = S.last_prices || {}, live = Object.keys(LIVE).length > 0;
+  const price = t => (LIVE[t] && LIVE[t].price) || px[t];
+  const rows = S.positions.map(p => { const v = p.shares * (price(p.ticker) || 0); return {...p, price:price(p.ticker), value:v,
+    day: LIVE[p.ticker] ? LIVE[p.ticker].change_pct/100 : null}; });
+  const total = (S.cash || 0) + rows.reduce((a,r) => a + r.value, 0);
+  rows.sort((a,b) => b.value - a.value);
+  const e = S.equity, first = e[0], last = e[e.length-1];
+  const ret = first ? total/first.usd-1 : 0, bret = first ? last.bench_usd/first.bench_usd-1 : 0;
+  const peak = Math.max(total, ...e.map(x => x.usd)), dd = peak ? 1 - total/peak : 0;
+  const reg = REG[S.prev_regime] || ["—",""];
+  const fx = S.fx || 0;
+  $("ovKpi").innerHTML = [
+    ["มูลค่าพอร์ต" + (live ? " (สด)" : ""), `$${fmt(total)}`, `≈ ฿${fmt(total*fx,0)} (${fmt(fx,2)} ฿/$)`],
+    ["ผลตอบแทนตั้งแต่เริ่ม", `<span class="${cls(ret)}">${pct(ret,2)}</span>`, `SPY ${pct(bret,2)} · เริ่ม ${first?first.date:"—"}`],
+    ["ลงจากจุดสูงสุด", `<span class="${dd>0.1?"down":""}">${pct(-dd,1)}</span>`, "ลดความเสี่ยงอัตโนมัติที่ −15%"],
+    ["สภาวะตลาด", `<span class="badge ${reg[1]}" style="font-size:14px">${reg[0]}</span>`, "จากแพ็กเกจล่าสุด"],
+    ["เงินสดในบัญชี", `$${fmt(S.cash)}`, `ออเดอร์อนุมัติรอเทรด ${S.approved}`],
+  ].map(([k,v,t]) => `<div class="kpi"><div class="k">${k}</div><div class="v mono">${v}</div><div class="s">${t}</div></div>`).join("");
+  $("posTitle").innerHTML = "สิ่งที่ถืออยู่" + (live ? ' <span class="muted">· ราคาสด</span>' : "");
+  $("posTbl").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">ประเภท</th><th>จำนวน</th><th>ราคา</th><th>วันนี้</th><th>มูลค่า $</th><th>สัดส่วน</th><th>ต้นทุน $</th><th>กำไร/ขาดทุน</th></tr>`
+    + (rows.length ? rows.map(p => { const pl = p.cost_usd ? p.value/p.cost_usd-1 : null;
+      return `<tr><td class="l mono">${p.ticker}</td><td class="l muted">${KIND[UNI[p.ticker]]||""}</td><td class="mono">${fmt(p.shares,4)}</td><td class="mono">${fmt(p.price)}</td><td class="mono ${cls(p.day)}">${p.day==null?"—":pct(p.day,2)}</td><td class="mono">${fmt(p.value)}</td><td class="mono">${fmt(p.value/total*100,1)}%</td><td class="mono">${fmt(p.cost_usd)}</td><td class="mono ${cls(pl)}">${pct(pl,2)}</td></tr>`; }).join("")
+      : `<tr><td class="l muted" colspan="9">ยังไม่มี — รอแพ็กเกจวันเสาร์แล้วอนุมัติออเดอร์</td></tr>`);
+}
+async function refreshQuotes(){
+  if (!S || !S.live_quotes || !S.positions.length){ $("liveBadge").hidden = true; return; }
+  const open = usMarketOpen();
+  $("liveBadge").hidden = false;
+  $("liveBadge").innerHTML = open ? '<span class="live"></span>ราคาสด' : "ตลาดสหรัฐปิด";
+  $("liveBadge").className = "badge " + (open ? "ok" : "");
+  try{ const q = await api("/api/quotes?symbols=" + S.positions.map(p => p.ticker).join(",")); LIVE = q.quotes || {}; render(); }catch(e){}
+}
+setInterval(() => { if (S && usMarketOpen() && !document.hidden) refreshQuotes(); }, 30000);
+
+const runAgent = mode => async e => guard(e.target, async () => { await api("/api/run",{mode}); alert("สั่งรันแล้ว ใช้เวลาประมาณ 2–5 นาที แล้วกดรีเฟรชหน้า"); });
+$("btnDaily").onclick = runAgent("daily");
+$("btnWeekly").onclick = runAgent("weekly");
+$("btnKill").onclick = e => guard(e.target, async () => {
+  const paused = S && S.paused;
+  if (!paused && !confirm("Kill switch จะยกเลิกออเดอร์ที่ค้างทั้งหมดและหยุดสร้างแพ็กเกจใหม่ ยืนยันไหม?")) return;
+  await api(paused ? "/api/resume" : "/api/kill", {}); await loadStatus(); });
+
+// ---------- ตัดสินใจ
+let curPkt = null;
+async function loadPackets(){
+  const ps = await api("/api/packets");
+  $("pktSel").innerHTML = ps.map(p => `<option value="${p.id}">#${p.id} · สัญญาณ ${p.signal_date} · ${ST[p.status]||p.status}</option>`).join("") || "<option>ยังไม่มีแพ็กเกจ</option>";
+  if (ps.length) showPacket(ps[0].id);
+}
+$("pktSel").onchange = e => showPacket(e.target.value);
+async function showPacket(id){
+  const p = await api(`/api/packets/${id}`); curPkt = p; const d = p.data, a = p.audit;
+  $("pktSel").value = p.id;
+  $("pktStatus").innerHTML = `<span class="st ${p.status}">${ST[p.status]||p.status}</span>`;
+  $("decAlert").hidden = a.status !== "fail"; $("decAlert").className = "alert bad";
+  $("decAlert").textContent = "⛔ ผู้ตรวจสอบไม่ผ่าน: อนุมัติไม่ได้ — " + a.fails.join(" · ");
+  $("report").textContent = p.report;
+  const open = p.orders.filter(o => o.status === "proposed" || o.status === "held");
+  $("btnApproveAll").disabled = $("btnRejectAll").disabled = !open.length || a.status === "fail";
+  $("ordTbl").innerHTML = `<tr><th class="l">ออเดอร์</th><th class="l">สินทรัพย์</th><th>มูลค่า $</th><th>สัดส่วน เดิม → ใหม่</th><th>ราคาอ้างอิง</th><th class="l">เหตุผล</th><th class="l">สถานะ</th><th></th></tr>`
+    + (p.orders.length ? p.orders.map(o => {
+      const can = (o.status === "proposed" || o.status === "held") && a.status !== "fail";
+      const fill = o.status === "filled" ? `<div class="muted" style="font-size:12px">${o.fill_date} @ ${fmt(o.fill_price)}</div>` : o.note ? `<div class="muted" style="font-size:12px;white-space:normal;max-width:220px">${o.note}</div>` : "";
+      return `<tr><td class="l ${o.side==="BUY"?"up":"down"}">${o.side==="BUY"?"ซื้อ":"ขาย"}</td><td class="l mono">${o.ticker}</td><td class="mono">${fmt(o.usd)}</td>
+        <td class="mono">${fmt(o.w_from*100,1)}% → ${fmt(o.w_to*100,1)}%</td><td class="mono">${fmt(o.ref_price)}</td><td class="wrap">${o.reason}</td>
+        <td class="l"><span class="st ${o.status}">${ST[o.status]||o.status}</span>${fill}</td>
+        <td>${can?`<button class="good" onclick="dec([${o.id}],'approve')">อนุมัติ</button> <button class="danger" onclick="dec([${o.id}],'reject')">ปฏิเสธ</button>`:""}</td></tr>`; }).join("")
+      : `<tr><td class="l muted" colspan="8">สัปดาห์นี้ไม่มีออเดอร์</td></tr>`);
+  $("ticket").textContent = p.orders.length ? p.orders.map((o,i) => `${i+1}. ${o.side==="BUY"?"ซื้อ":"ขาย"} ${o.ticker} ${o.w_to===0&&o.side==="SELL"?"ทั้งหมด":"มูลค่า $"+fmt(o.usd)}  (ราคาอ้างอิง ${fmt(o.ref_price)})`).join("\n") + "\n\nขายก่อน แล้วค่อยซื้อ · กดช่วงตลาดสหรัฐเปิด" : "ไม่มีรายการ";
+  $("tgtTbl").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">ประเภท</th><th>น้ำหนัก</th></tr>` + Object.entries(d.target).sort((x,y)=>y[1]-x[1]).map(([t,w]) => `<tr><td class="l">${t}</td><td class="l muted">${KIND[UNI[t]]||""}</td><td>${fmt(w*100,1)}%</td></tr>`).join("");
+  $("rankTbl").innerHTML = `<tr><th>#</th><th class="l">สินทรัพย์</th><th>โมเมนตัม</th><th>เหนือเส้น 200 วัน</th></tr>` + d.ranking.map(r => `<tr><td>${r.rank}</td><td class="l">${r.ticker}</td><td class="${cls(r.mom)}">${pct(r.mom)}</td><td>${r.above_sma?"✓":"✗"}</td></tr>`).join("");
+  $("auditBox").innerHTML = `<div style="margin-bottom:8px"><span class="badge ${a.status==="pass"?"ok":a.status==="warn"?"warn":"bad"}">${{pass:"ผ่าน",warn:"ผ่าน มีข้อสังเกต",fail:"ไม่ผ่าน"}[a.status]}</span></div>`
+    + (a.fails.concat(a.warns).map(x => `<div style="font-size:13px">• ${x}</div>`).join("") || `<div class="muted" style="font-size:13px">คำนวณสัญญาณซ้ำจากข้อมูลดิบได้ตรงกัน · ไม่ผิดกฎความเสี่ยง · ราคาอ้างอิงตรงกับข้อมูล</div>`)
+    + `<div class="muted" style="font-size:12px;margin-top:8px">News Agent: ${d.news.enabled ? (d.news.blocked.length ? "ตัดออก " + d.news.blocked.join(", ") : "ไม่มีธง") : d.news.note}</div>`;
+}
+window.dec = async (ids, decision) => { try{ await api("/api/orders/decide",{ids,decision}); await showPacket(curPkt.id); loadStatus(); }catch(e){ alert(e.message); } };
+const openIds = () => curPkt.orders.filter(o => o.status === "proposed" || o.status === "held").map(o => o.id);
+$("btnApproveAll").onclick = () => dec(openIds(), "approve");
+$("btnRejectAll").onclick = () => dec(openIds(), "reject");
+$("btnCopy").onclick = () => navigator.clipboard?.writeText($("ticket").textContent);
+
+// ---------- Backtest (ผลล่าสุดที่เอเจนต์ 9 รันไว้)
+async function loadBt(){
+  const b = await api("/api/backtest");
+  if (!b){ $("btInfo").textContent = "ยังไม่มีผล — เอเจนต์ Backtest รันทุกวันเสาร์ หรือสั่งรันโหมด backtest ใน GitHub Actions"; return; }
+  const r = b.data, s = r.stats, S_ = s.strategy, B = s.benchmark, P = r.params.strategy;
+  $("btInfo").textContent = `รันเมื่อ ${b.created.replace("T"," ").slice(0,16)} · ข้อมูล ${b.source} · ${s.period} · ถือ ${P.top_n} ตัว · เส้นเทรนด์ ${P.trend_sma} วัน · โมเมนตัม ${P.mom_short}/${P.mom_long} วัน`;
+  $("btKpi").innerHTML = [
+    ["ผลตอบแทนต่อปี", `${fmt(S_.cagr)}%`, `SPY ${fmt(B.cagr)}%`, S_.cagr - B.cagr],
+    ["ลงหนักสุด (Max DD)", `${fmt(S_.max_dd)}%`, `SPY ${fmt(B.max_dd)}%`, S_.max_dd - B.max_dd],
+    ["ความผันผวน", `${fmt(S_.vol)}%`, `SPY ${fmt(B.vol)}%`, B.vol - S_.vol],
+    ["Sharpe", fmt(S_.sharpe), `SPY ${fmt(B.sharpe)}`, S_.sharpe - B.sharpe],
+    ["ปีที่แย่สุด", `${fmt(s.worst_year)}%`, "", null],
+    ["ซื้อขาย/ปี", `${fmt(s.turnover_per_year,0)}%`, `ผลเป็นบาท ${fmt(s.strategy_thb.cagr)}%/ปี`, null],
+  ].map(([k,v,t,c]) => `<div class="kpi"><div class="k">${k}</div><div class="v mono ${c==null?"":cls(c)}">${v}</div><div class="s">${t}</div></div>`).join("");
+  btC.a.setData(r.equity); btC.b.setData(r.bench); btC.c.timeScale().fitContent();
+  const row = (n, x) => `<tr><td class="l">${n}</td><td>${fmt(x.cagr)}%</td><td>${fmt(x.max_dd)}%</td><td>${fmt(x.sharpe)}</td></tr>`;
+  $("btCmp").innerHTML = `<tr><th class="l">ช่วง</th><th>ต่อปี</th><th>Max DD</th><th>Sharpe</th></tr>` + row("ทั้งหมด", S_) + row("70% แรก", s.in_sample) + row("30% หลัง", s.out_sample) + row("SPY 30% หลัง", s.bench_out_sample);
+  $("btYear").innerHTML = `<tr><th class="l">ปี</th><th>กลยุทธ์</th><th>SPY</th><th>ต่าง</th></tr>` + s.by_year.slice().reverse().map(y => `<tr><td class="l">${y.year}</td><td class="${cls(y.ret)}">${fmt(y.ret)}</td><td>${fmt(y.bench)}</td><td class="${cls(y.ret-y.bench)}">${fmt(y.ret-y.bench)}</td></tr>`).join("");
+  $("robTbl").innerHTML = `<tr><th>ถือกี่ตัว</th><th>เส้นเทรนด์</th><th>ต่อปี</th><th>Max DD</th><th>Sharpe</th><th>30% หลัง ต่อปี</th></tr>` + (r.robustness||[]).map(x => `<tr><td>${x.top_n}</td><td>${x.trend_sma}</td><td class="${cls(x.cagr)}">${fmt(x.cagr)}%</td><td>${fmt(x.max_dd)}%</td><td>${fmt(x.sharpe)}</td><td class="${cls(x.out_cagr)}">${fmt(x.out_cagr)}%</td></tr>`).join("");
+}
+
+// ---------- Journal
+async function loadJournal(){
+  const j = await api("/api/journal");
+  const A = {orchestrator:"ผู้จัดการ",execution:"ส่งออเดอร์",owner:"คุณ",data:"ข้อมูล",system:"ระบบ",backtest:"Backtest"};
+  $("jrTbl").innerHTML = `<tr><th class="l">เวลา</th><th class="l">ใคร</th><th class="l">เหตุการณ์</th><th class="l">รายละเอียด</th></tr>` + j.map(r => `<tr><td class="l mono muted">${r.time.replace("T"," ").slice(0,16)}</td><td class="l">${A[r.agent]||r.agent}</td><td class="l">${r.event}</td><td class="l mono muted" style="white-space:normal;font-size:12px">${(r.detail||"").replace(/</g,"&lt;")}</td></tr>`).join("");
+}
+
+// ---------- ตั้งค่า
+function loadSettings(){
+  if (!S) return;
+  $("fhState").innerHTML = S.live_quotes ? '<span class="up">✓ ตั้ง Finnhub key แล้ว</span>' : '<span class="muted">ยังไม่ได้ตั้ง — หน้าเว็บจะใช้ราคาปิดล่าสุด</span>';
+  $("lastRun").textContent = S.last_run ? `${S.last_run.time.replace("T"," ").slice(0,16)} · ${S.last_run.event}` : "ยังไม่เคยรัน";
+  $("pwForm").querySelectorAll("input,button").forEach(x => x.disabled = S.password_env);
+  if (S.password_env) $("pwMsg").textContent = "รหัสผ่านตั้งไว้ใน Cloudflare (APP_PASSWORD) เปลี่ยนที่นั่น";
+}
+const saveFh = key => async e => guard(e.target, async () => { await api("/api/settings",{finnhub_key:key()}); $("fhKey").value = ""; await loadStatus(); loadSettings(); });
+$("btnFh").onclick = saveFh(() => $("fhKey").value.trim());
+$("btnFhDel").onclick = saveFh(() => "");
+$("pwForm").onsubmit = async e => { e.preventDefault(); $("pwMsg").className = ""; 
+  try{ await api("/api/password",{current:$("pwCur").value,next:$("pwNew").value}); $("pwMsg").className = "up"; $("pwMsg").textContent = "เปลี่ยนรหัสผ่านแล้ว"; e.target.reset(); }
+  catch(err){ $("pwMsg").className = "down"; $("pwMsg").textContent = err.message; } };
+
+function boot(){ loadStatus().catch(()=>{}); }
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invest Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="/static/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{--bg:#0e1116;--panel:#151a21;--line:#242b35;--text:#e6e9ee;--mute:#8a94a3;--up:#22c38e;--down:#f0596a;--accent:#5b9dff;--warn:#f2b84b}
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 "IBM Plex Sans Thai",system-ui,sans-serif}
+  .mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+  header{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+  header h1{font-size:16px;margin:0;font-weight:600;margin-right:8px}
+  nav{display:flex;gap:4px;flex-wrap:wrap}
+  nav button{background:transparent;border:1px solid transparent;color:var(--mute);font-weight:500}
+  nav button.on{color:var(--text);border-color:var(--line);background:var(--panel)}
+  nav .dot{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--warn);color:#000;font-size:11px;text-align:center}
+  .badge{padding:2px 8px;border-radius:4px;font-size:12px;border:1px solid var(--line);color:var(--mute);white-space:nowrap}
+  .badge.warn{border-color:var(--warn);color:var(--warn)} .badge.ok{border-color:var(--up);color:var(--up)} .badge.bad{border-color:var(--down);color:var(--down)}
+  select,input,button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+  button{cursor:pointer} button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+  button.danger{border-color:var(--down);color:var(--down)} button.good{border-color:var(--up);color:var(--up)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  main{padding:16px 20px;max-width:1400px;margin:0 auto}
+  section{display:none} section.on{display:flex;flex-direction:column;gap:16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+  .panel h2{font-size:12px;font-weight:500;color:var(--mute);margin:0 0 10px;letter-spacing:.03em}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .kpi .k{color:var(--mute);font-size:12px} .kpi .v{font-size:20px;font-weight:500;margin-top:2px} .kpi .s{color:var(--mute);font-size:12px}
+  .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--mute)}
+  .chart{height:340px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th{color:var(--mute);font-weight:500}
+  td.l,th.l{text-align:left} td.wrap{white-space:normal;text-align:left;min-width:220px}
+  .scroll{overflow:auto}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px} @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .report{white-space:pre-wrap;font-size:14px;line-height:1.7}
+  .alert{border:1px solid var(--warn);color:var(--warn);background:rgba(242,184,75,.07);border-radius:8px;padding:10px 14px;font-size:13px}
+  .alert.bad{border-color:var(--down);color:var(--down);background:rgba(240,89,106,.07)}
+  .ticket{white-space:pre-wrap;background:var(--bg);border:1px dashed var(--line);border-radius:6px;padding:10px;font-size:13px}
+  label.f{display:flex;flex-direction:column;gap:4px;color:var(--mute);font-size:12px} label.f input,label.f select{width:120px}
+  .st{font-size:12px;padding:1px 6px;border-radius:4px;border:1px solid var(--line)}
+  .st.proposed{color:var(--warn);border-color:var(--warn)} .st.approved{color:var(--accent);border-color:var(--accent)}
+  .st.filled{color:var(--up);border-color:var(--up)} .st.rejected,.st.cancelled,.st.blocked{color:var(--down);border-color:var(--down)}
+  .st.expired{color:var(--mute)} .st.held{color:var(--warn);border-color:var(--warn)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Invest Agent</h1>
+  <nav>
+    <button data-tab="ov" class="on">ภาพรวม</button>
+    <button data-tab="dec">ตัดสินใจ<span id="pendDot" class="dot" hidden></span></button>
+    <button data-tab="bt">Backtest</button>
+    <button data-tab="jr">Journal</button>
+  </nav>
+  <span style="flex:1"></span>
+  <span class="badge" id="srcBadge">—</span>
+  <span class="badge" id="runBadge">—</span>
+</header>
+
+<main>
+<!-- ============ ภาพรวม ============ -->
+<section id="ov" class="on">
+  <div id="ovWarn" class="alert" hidden></div>
+  <div class="kpis" id="ovKpi"></div>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <h2 style="margin:0">พอร์ตจำลอง vs ถือ SPY เฉยๆ (USD)</h2>
+      <div class="row">
+        <button id="btnDaily">อัปเดตรายวัน</button>
+        <button id="btnWeekly" class="primary">สร้างแพ็กเกจสัปดาห์นี้</button>
+        <button id="btnKill" class="danger">Kill switch</button>
+      </div>
+    </div>
+    <div id="ovChart" class="chart"></div>
+  </div>
+  <div class="panel"><h2>สิ่งที่ถืออยู่</h2><div class="scroll"><table id="posTbl"></table></div></div>
+  <div class="panel">
+    <h2>ทดลองระบบ</h2>
+    <div class="row"><button id="btnSim">จำลอง forward test ย้อนหลัง 1 ปี</button>
+    <span class="muted" style="font-size:12px">ล้างพอร์ตจำลองปัจจุบัน แล้วเดินระบบทีละวันโดยอนุมัติทุกออเดอร์อัตโนมัติ ใช้ดูว่าระบบทำงานยังไง</span></div>
+  </div>
+</section>
+
+<!-- ============ ตัดสินใจ ============ -->
+<section id="dec">
+  <div class="row"><select id="pktSel"></select><span id="pktStatus"></span></div>
+  <div id="decAlert" class="alert" hidden></div>
+  <div class="panel"><h2>สรุปจากผู้แปลผล</h2><div id="report" class="report"></div></div>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <h2 style="margin:0">ออเดอร์ที่เสนอ</h2>
+      <div class="row"><button id="btnApproveAll" class="good">อนุมัติทั้งหมด</button><button id="btnRejectAll" class="danger">ปฏิเสธทั้งหมด</button></div>
+    </div>
+    <div class="scroll"><table id="ordTbl"></table></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h2>ใบสั่งสำหรับกดใน Dime (เมื่อใช้เงินจริง)</h2><div id="ticket" class="ticket mono"></div>
+      <button id="btnCopy" style="margin-top:8px">คัดลอก</button></div>
+    <div class="panel"><h2>พอร์ตเป้าหมายหลังปรับ</h2><table id="tgtTbl" class="mono"></table></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h2>อันดับโมเมนตัม (เอเจนต์ 4)</h2><table id="rankTbl" class="mono"></table></div>
+    <div class="panel"><h2>ผู้ตรวจสอบ (เอเจนต์ 10)</h2><div id="auditBox"></div></div>
+  </div>
+</section>
+
+<!-- ============ Backtest ============ -->
+<section id="bt">
+  <div class="panel">
+    <h2>ตั้งค่า</h2>
+    <div class="row" style="align-items:flex-end">
+      <label class="f">ข้อมูล<select id="btSrc"><option value="auto">จริง (yfinance)</option><option value="synthetic">จำลอง</option></select></label>
+      <label class="f">ถือกี่ตัว<input id="top_n" type="number" min="2" max="12"></label>
+      <label class="f">เส้นเทรนด์ (วัน)<input id="trend_sma" type="number" min="50" step="10"></label>
+      <label class="f">โมเมนตัมสั้น (วัน)<input id="mom_short" type="number" min="21" step="21"></label>
+      <label class="f">โมเมนตัมยาว (วัน)<input id="mom_long" type="number" min="63" step="21"></label>
+      <button id="btnBt" class="primary">รัน Backtest</button>
+      <button id="btnRob">ทดสอบความทนทาน</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:8px">ไล่ปรับตัวเลขจนได้กำไรสูงสุด = overfit ให้ดูช่อง "30% หลัง" และผลทดสอบความทนทานเป็นหลัก</div>
+  </div>
+  <div id="btWarn" class="alert" hidden></div>
+  <div class="kpis" id="btKpi"></div>
+  <div class="panel"><h2>Equity: กลยุทธ์ vs SPY (USD, log scale)</h2><div id="btChart" class="chart"></div></div>
+  <div class="grid2">
+    <div class="panel"><h2>เทียบช่วง</h2><table id="btCmp" class="mono"></table></div>
+    <div class="panel"><h2>รายปี (%)</h2><div class="scroll" style="max-height:320px"><table id="btYear" class="mono"></table></div></div>
+  </div>
+  <div class="panel" id="robPanel" hidden><h2>ความทนทาน (ปรับพารามิเตอร์รอบค่าตั้งต้น)</h2><table id="robTbl" class="mono"></table></div>
+</section>
+
+<!-- ============ Journal ============ -->
+<section id="jr">
+  <div class="panel"><h2>บันทึกทุกการตัดสินใจ</h2><div class="scroll"><table id="jrTbl"></table></div></div>
+</section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const api = async (u, body) => { const r = await fetch(u, body ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {}); const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status); return j; };
+const fmt = (n, d=2) => n == null || isNaN(n) ? "—" : Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const pct = (n, d=1) => n == null ? "—" : `${n>0?"+":""}${fmt(n*100,d)}%`;
+const cls = n => n > 0 ? "up" : n < 0 ? "down" : "";
+const KIND = {etf:"ETF",stock:"หุ้น",defensive:"ป้องกัน",cash:"เงินสด"};
+const REG = {risk_on:["ขาขึ้น","ok"],caution:["ระวัง","warn"],risk_off:["ขาลง","bad"]};
+const ST = {proposed:"รอตัดสินใจ",approved:"อนุมัติแล้ว รอเทรด",filled:"เทรดแล้ว",rejected:"ปฏิเสธ",expired:"หมดอายุ",held:"พักไว้",cancelled:"ยกเลิก",blocked:"ถูกบล็อก",
+            awaiting:"รอตัดสินใจ",decided:"ตัดสินใจครบ",no_action:"ไม่ต้องเทรด"};
+async function guard(btn, fn){ btn.disabled = true; const t = btn.textContent; btn.textContent = "กำลังทำงาน…"; try{ await fn(); }catch(e){ alert(e.message); } btn.disabled = false; btn.textContent = t; }
+
+const chartOpts = {layout:{background:{color:"transparent"},textColor:"#8a94a3",fontFamily:"JetBrains Mono"},
+  grid:{vertLines:{color:"#1c222b"},horzLines:{color:"#1c222b"}},rightPriceScale:{borderColor:"#242b35"},
+  timeScale:{borderColor:"#242b35"},localization:{locale:"en-US"},autoSize:true};
+const mk = (el, log) => { const c = LightweightCharts.createChart($(el), {...chartOpts, rightPriceScale:{...chartOpts.rightPriceScale, mode: log?1:0}});
+  return {c, a:c.addLineSeries({color:"#5b9dff",lineWidth:2,title:"กลยุทธ์"}), b:c.addLineSeries({color:"#8a94a3",lineWidth:1,lineStyle:2,title:"SPY"})}; };
+const ovC = mk("ovChart"), btC = mk("btChart", true);
+
+// ---------- tabs
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
+  if (b.dataset.tab === "dec") loadPackets(); if (b.dataset.tab === "jr") loadJournal(); if (b.dataset.tab === "bt" && !btLoaded) runBt();
+});
+
+// ---------- ภาพรวม
+async function loadStatus(){
+  const s = await api("/api/status");
+  $("srcBadge").textContent = {yfinance:"ข้อมูลจริง",cache:"ข้อมูลจริง (cache)",synthetic:"ข้อมูลจำลอง"}[s.source] + " · " + s.last_data;
+  $("srcBadge").className = "badge " + (s.source === "synthetic" ? "warn" : "ok");
+  $("runBadge").textContent = s.paused ? "โหมดพัก" : "ทำงาน"; $("runBadge").className = "badge " + (s.paused ? "bad" : "ok");
+  $("btnKill").textContent = s.paused ? "ทำงานต่อ" : "Kill switch"; $("btnKill").className = s.paused ? "good" : "danger";
+  $("pendDot").hidden = !s.pending; $("pendDot").textContent = s.pending;
+  const w = [];
+  if (s.source === "synthetic") w.push("กำลังใช้ข้อมูลจำลอง ตัวเลขทั้งหมดไม่มีความหมาย ใช้แค่ดูว่าระบบทำงาน");
+  if (s.pending) w.push(`มี ${s.pending} ออเดอร์รอคุณตัดสินใจ → แท็บ "ตัดสินใจ"`);
+  $("ovWarn").hidden = !w.length; $("ovWarn").innerHTML = w.join("<br>");
+  const e = s.equity, first = e[0], last = e[e.length-1];
+  const ret = first ? last.usd/first.usd-1 : 0, bret = first ? last.bench_usd/first.bench_usd-1 : 0;
+  const reg = REG[s.regime] || ["—",""];
+  $("ovKpi").innerHTML = [
+    ["มูลค่าพอร์ต", `$${fmt(s.total_usd)}`, `≈ ฿${fmt(s.total_usd*s.fx,0)} (${fmt(s.fx,2)} ฿/$)`],
+    ["ผลตอบแทนตั้งแต่เริ่ม", `<span class="${cls(ret)}">${pct(ret,2)}</span>`, `SPY ${pct(bret,2)} · ${first?first.date:"—"} ถึง ${last?last.date:"—"}`],
+    ["ลงจากจุดสูงสุด", `<span class="${s.drawdown>0.1?"down":""}">${pct(-s.drawdown,1)}</span>`, "ลดความเสี่ยงอัตโนมัติที่ −15%"],
+    ["สภาวะตลาด", `<span class="badge ${reg[1]}" style="font-size:14px">${reg[0]}</span>`, "จากแพ็กเกจล่าสุด"],
+    ["เงินสดในบัญชี", `$${fmt(s.cash)}`, `ออเดอร์อนุมัติรอเทรด ${s.approved}`],
+  ].map(([k,v,t]) => `<div class="kpi"><div class="k">${k}</div><div class="v mono">${v}</div><div class="s">${t}</div></div>`).join("");
+  ovC.a.setData(e.map(x => ({time:x.date,value:x.usd}))); ovC.b.setData(e.map(x => ({time:x.date,value:x.bench_usd}))); ovC.c.timeScale().fitContent();
+  $("posTbl").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">ประเภท</th><th>จำนวน</th><th>ราคา</th><th>มูลค่า $</th><th>สัดส่วน</th><th>ต้นทุน $</th><th>กำไร/ขาดทุน</th></tr>`
+    + (s.positions.length ? s.positions.map(p => `<tr><td class="l mono">${p.ticker}</td><td class="l muted">${KIND[p.kind]} · ${p.group}</td><td class="mono">${fmt(p.shares,4)}</td><td class="mono">${fmt(p.price)}</td><td class="mono">${fmt(p.value)}</td><td class="mono">${fmt(p.weight*100,1)}%</td><td class="mono">${fmt(p.cost)}</td><td class="mono ${cls(p.pnl_pct)}">${p.pnl_pct==null?"—":(p.pnl_pct>0?"+":"")+fmt(p.pnl_pct)+"%"}</td></tr>`).join("")
+      : `<tr><td class="l muted" colspan="8">ยังไม่มี — กด "สร้างแพ็กเกจสัปดาห์นี้" แล้วอนุมัติออเดอร์</td></tr>`);
+}
+$("btnDaily").onclick = e => guard(e.target, async () => { await api("/api/run",{mode:"daily"}); await loadStatus(); });
+$("btnWeekly").onclick = e => guard(e.target, async () => { const r = await api("/api/run",{mode:"weekly"}); await loadStatus();
+  if (r.packet){ document.querySelector('nav button[data-tab="dec"]').click(); } else alert("สัปดาห์นี้มีแพ็กเกจแล้ว หรือระบบอยู่ในโหมดพัก"); });
+$("btnKill").onclick = e => guard(e.target, async () => {
+  const paused = $("btnKill").textContent === "ทำงานต่อ";
+  if (!paused && !confirm("Kill switch จะยกเลิกออเดอร์ที่ค้างทั้งหมดและหยุดสร้างแพ็กเกจใหม่ ยืนยันไหม?")) return;
+  await api(paused ? "/api/resume" : "/api/kill", {}); await loadStatus(); });
+$("btnSim").onclick = e => { if (!confirm("ล้างพอร์ตจำลองปัจจุบันทั้งหมดแล้วจำลองย้อนหลัง 1 ปี ยืนยันไหม?")) return;
+  guard(e.target, async () => { await api("/api/simulate",{}); await loadStatus(); }); };
+
+// ---------- ตัดสินใจ
+let curPkt = null;
+async function loadPackets(sel){
+  const ps = await api("/api/packets");
+  $("pktSel").innerHTML = ps.map(p => `<option value="${p.id}">#${p.id} · สัญญาณ ${p.signal_date} · ${ST[p.status]||p.status}</option>`).join("") || "<option>ยังไม่มีแพ็กเกจ</option>";
+  if (ps.length){ $("pktSel").value = sel ?? ps[0].id; showPacket($("pktSel").value); }
+}
+$("pktSel").onchange = e => showPacket(e.target.value);
+async function showPacket(id){
+  const p = await api(`/api/packets/${id}`); curPkt = p; const d = p.data, a = p.audit;
+  $("pktStatus").innerHTML = `<span class="st ${p.status}">${ST[p.status]||p.status}</span>`;
+  const al = [];
+  if (a.status === "fail") al.push(["bad","⛔ ผู้ตรวจสอบไม่ผ่าน: อนุมัติไม่ได้ — " + a.fails.join(" · ")]);
+  if (d.data_source === "synthetic") al.push(["","แพ็กเกจนี้มาจากข้อมูลจำลอง"]);
+  $("decAlert").hidden = !al.length; $("decAlert").className = "alert " + (al[0]?.[0]||""); $("decAlert").innerHTML = al.map(x=>x[1]).join("<br>");
+  $("report").textContent = p.report;
+  const open = p.orders.filter(o => o.status === "proposed" || o.status === "held");
+  $("btnApproveAll").disabled = $("btnRejectAll").disabled = !open.length || a.status === "fail";
+  $("ordTbl").innerHTML = `<tr><th class="l">ออเดอร์</th><th class="l">สินทรัพย์</th><th>มูลค่า $</th><th>สัดส่วน เดิม → ใหม่</th><th>ราคาอ้างอิง</th><th class="l">เหตุผล</th><th class="l">สถานะ</th><th></th></tr>`
+    + (p.orders.length ? p.orders.map(o => {
+      const can = (o.status === "proposed" || o.status === "held") && a.status !== "fail";
+      const fill = o.status === "filled" ? `<div class="muted" style="font-size:12px">${o.fill_date} @ ${fmt(o.fill_price)}</div>` : o.note ? `<div class="muted" style="font-size:12px;white-space:normal;max-width:220px">${o.note}</div>` : "";
+      return `<tr><td class="l ${o.side==="BUY"?"up":"down"}">${o.side==="BUY"?"ซื้อ":"ขาย"}</td><td class="l mono">${o.ticker}</td><td class="mono">${fmt(o.usd)}</td>
+        <td class="mono">${fmt(o.w_from*100,1)}% → ${fmt(o.w_to*100,1)}%</td><td class="mono">${fmt(o.ref_price)}</td><td class="wrap">${o.reason}</td>
+        <td class="l"><span class="st ${o.status}">${ST[o.status]||o.status}</span>${fill}</td>
+        <td>${can?`<button class="good" onclick="dec([${o.id}],'approve')">อนุมัติ</button> <button class="danger" onclick="dec([${o.id}],'reject')">ปฏิเสธ</button>`:""}</td></tr>`; }).join("")
+      : `<tr><td class="l muted" colspan="8">สัปดาห์นี้ไม่มีออเดอร์</td></tr>`);
+  $("ticket").textContent = p.orders.length ? p.orders.map((o,i) => `${i+1}. ${o.side==="BUY"?"ซื้อ":"ขาย"} ${o.ticker} ${o.w_to===0&&o.side==="SELL"?"ทั้งหมด":"มูลค่า $"+fmt(o.usd)}  (ราคาอ้างอิง ${fmt(o.ref_price)})`).join("\n") + "\n\nขายก่อน แล้วค่อยซื้อ · กดช่วงตลาดสหรัฐเปิด" : "ไม่มีรายการ";
+  $("tgtTbl").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">ประเภท</th><th>น้ำหนัก</th></tr>` + Object.entries(d.target).sort((x,y)=>y[1]-x[1]).map(([t,w]) => `<tr><td class="l">${t}</td><td class="l muted">${KIND[(window.UNI||{})[t]]||""}</td><td>${fmt(w*100,1)}%</td></tr>`).join("");
+  $("rankTbl").innerHTML = `<tr><th>#</th><th class="l">สินทรัพย์</th><th>โมเมนตัม</th><th>เหนือเส้น 200 วัน</th></tr>` + d.ranking.map(r => `<tr><td>${r.rank}</td><td class="l">${r.ticker}</td><td class="${cls(r.mom)}">${pct(r.mom)}</td><td>${r.above_sma?"✓":"✗"}</td></tr>`).join("");
+  $("auditBox").innerHTML = `<div style="margin-bottom:8px"><span class="badge ${a.status==="pass"?"ok":a.status==="warn"?"warn":"bad"}">${{pass:"ผ่าน",warn:"ผ่าน มีข้อสังเกต",fail:"ไม่ผ่าน"}[a.status]}</span></div>`
+    + (a.fails.concat(a.warns).map(x => `<div style="font-size:13px">• ${x}</div>`).join("") || `<div class="muted" style="font-size:13px">คำนวณสัญญาณซ้ำจากข้อมูลดิบได้ตรงกัน · ไม่ผิดกฎความเสี่ยง · ราคาอ้างอิงตรงกับข้อมูล</div>`)
+    + `<div class="muted" style="font-size:12px;margin-top:8px">News Agent: ${d.news.enabled ? (d.news.blocked.length ? "ตัดออก " + d.news.blocked.join(", ") : "ไม่มีธง") : d.news.note}</div>`;
+}
+window.dec = async (ids, decision) => { try{ await api("/api/orders/decide",{ids,decision}); await showPacket(curPkt.id); loadStatus(); }catch(e){ alert(e.message); } };
+const openIds = () => curPkt.orders.filter(o => o.status === "proposed" || o.status === "held").map(o => o.id);
+$("btnApproveAll").onclick = () => dec(openIds(), "approve");
+$("btnRejectAll").onclick = () => dec(openIds(), "reject");
+$("btnCopy").onclick = () => navigator.clipboard?.writeText($("ticket").textContent);
+
+// ---------- Backtest
+let btLoaded = false;
+async function runBt(rob=false){
+  btLoaded = true;
+  const body = {source:$("btSrc").value, robustness:rob};
+  for (const k of ["top_n","trend_sma","mom_short","mom_long"]) if ($(k).value) body[k] = Number($(k).value);
+  const r = await api("/api/backtest", body), s = r.stats;
+  for (const k of ["top_n","trend_sma","mom_short","mom_long"]) $(k).value = r.params.strategy[k];
+  $("btWarn").hidden = r.source !== "synthetic"; $("btWarn").textContent = "ผลนี้มาจากข้อมูลจำลอง (ดึงข้อมูลจริงไม่ได้ หรือเลือกโหมดจำลอง) ตัวเลขไม่มีความหมาย";
+  const S = s.strategy, B = s.benchmark;
+  $("btKpi").innerHTML = [
+    ["ผลตอบแทนต่อปี", `${fmt(S.cagr)}%`, `SPY ${fmt(B.cagr)}%`, S.cagr - B.cagr],
+    ["ลงหนักสุด (Max DD)", `${fmt(S.max_dd)}%`, `SPY ${fmt(B.max_dd)}%`, S.max_dd - B.max_dd],
+    ["ความผันผวน", `${fmt(S.vol)}%`, `SPY ${fmt(B.vol)}%`, B.vol - S.vol],
+    ["Sharpe", fmt(S.sharpe), `SPY ${fmt(B.sharpe)}`, S.sharpe - B.sharpe],
+    ["ปีที่แย่สุด", `${fmt(s.worst_year)}%`, s.period, null],
+    ["ซื้อขาย/ปี", `${fmt(s.turnover_per_year,0)}%`, `${s.trades} ครั้ง · ผลเป็นบาท ${fmt(s.strategy_thb.cagr)}%/ปี`, null],
+  ].map(([k,v,t,c]) => `<div class="kpi"><div class="k">${k}</div><div class="v mono ${c==null?"":cls(c)}">${v}</div><div class="s">${t}</div></div>`).join("");
+  btC.a.setData(r.equity); btC.b.setData(r.bench); btC.c.timeScale().fitContent();
+  const row = (n, x) => `<tr><td class="l">${n}</td><td>${fmt(x.cagr)}%</td><td>${fmt(x.max_dd)}%</td><td>${fmt(x.sharpe)}</td></tr>`;
+  $("btCmp").innerHTML = `<tr><th class="l">ช่วง</th><th>ต่อปี</th><th>Max DD</th><th>Sharpe</th></tr>` + row("ทั้งหมด", S) + row("70% แรก", s.in_sample) + row("30% หลัง", s.out_sample) + row("SPY 30% หลัง", s.bench_out_sample);
+  $("btYear").innerHTML = `<tr><th class="l">ปี</th><th>กลยุทธ์</th><th>SPY</th><th>ต่าง</th></tr>` + s.by_year.slice().reverse().map(y => `<tr><td class="l">${y.year}</td><td class="${cls(y.ret)}">${fmt(y.ret)}</td><td>${fmt(y.bench)}</td><td class="${cls(y.ret-y.bench)}">${fmt(y.ret-y.bench)}</td></tr>`).join("");
+  if (r.robustness){ $("robPanel").hidden = false;
+    $("robTbl").innerHTML = `<tr><th>ถือกี่ตัว</th><th>เส้นเทรนด์</th><th>ต่อปี</th><th>Max DD</th><th>Sharpe</th><th>30% หลัง ต่อปี</th></tr>` + r.robustness.map(x => `<tr><td>${x.top_n}</td><td>${x.trend_sma}</td><td class="${cls(x.cagr)}">${fmt(x.cagr)}%</td><td>${fmt(x.max_dd)}%</td><td>${fmt(x.sharpe)}</td><td class="${cls(x.out_cagr)}">${fmt(x.out_cagr)}%</td></tr>`).join(""); }
+}
+$("btnBt").onclick = e => guard(e.target, () => runBt(false));
+$("btnRob").onclick = e => guard(e.target, () => runBt(true));
+
+// ---------- Journal
+async function loadJournal(){
+  const j = await api("/api/journal");
+  const A = {orchestrator:"ผู้จัดการ",execution:"ส่งออเดอร์",owner:"คุณ",data:"ข้อมูล",system:"ระบบ"};
+  $("jrTbl").innerHTML = `<tr><th class="l">เวลา</th><th class="l">ใคร</th><th class="l">เหตุการณ์</th><th class="l">รายละเอียด</th></tr>` + j.map(r => `<tr><td class="l mono muted">${r.time.replace("T"," ").slice(0,16)}</td><td class="l">${A[r.agent]||r.agent}</td><td class="l">${r.event}</td><td class="l mono muted" style="white-space:normal;font-size:12px">${r.detail||""}</td></tr>`).join("");
+}
+
+fetch("/api/universe").then(r=>r.ok?r.json():{}).then(u=>window.UNI=u).catch(()=>{});
+loadStatus();
+</script>
+</body>
+</html>

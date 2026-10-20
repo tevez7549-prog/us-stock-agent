@@ -1,0 +1,13 @@
+{
+  "name": "us-stock-agent",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/agent/*"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "us-stock-agent", "database_id": "34da2387-758f-4ebd-b51e-a4717151be72" }
+  ],
+  // เอเจนต์บน GitHub Actions ยืนยันตัวด้วย OIDC token ของ repo นี้ (ไม่ต้องเก็บ secret ใน GitHub)
+  "vars": { "AGENT_REPO": "tevez7549-prog/us-stock-agent" },
+  // run near Singapore: Claude API refuses requests from some Cloudflare locations (e.g. Hong Kong)
+  "placement": { "region": "aws:ap-southeast-1" }
+}

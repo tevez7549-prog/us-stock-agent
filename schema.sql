@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS positions (ticker TEXT PRIMARY KEY, shares REAL, cost_usd REAL);
+CREATE TABLE IF NOT EXISTS packets (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, signal_date TEXT UNIQUE, status TEXT, data TEXT, audit TEXT, report TEXT);
+CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, packet_id INTEGER, ticker TEXT, side TEXT, usd REAL, ref_price REAL, w_from REAL, w_to REAL, reason TEXT, status TEXT, decided_at TEXT, fill_date TEXT, fill_price REAL, shares REAL, fee REAL, realized_usd REAL, note TEXT);
+CREATE TABLE IF NOT EXISTS equity (date TEXT PRIMARY KEY, usd REAL, thb REAL, bench_usd REAL);
+CREATE TABLE IF NOT EXISTS journal (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, agent TEXT, event TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS backtests (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, source TEXT, data TEXT);
+CREATE TABLE IF NOT EXISTS docs (coll TEXT, id TEXT, data TEXT, updated_at TEXT, PRIMARY KEY (coll, id));
+CREATE INDEX IF NOT EXISTS idx_orders_packet ON orders (packet_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
