@@ -9,7 +9,7 @@
 import json
 import sys
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -119,6 +119,25 @@ def daily(d):
     paper.put("fx", round(float(fx.iloc[-1]), 4), shared=True)
     paper.put("last_data", str(close.index[-1].date()), shared=True)
     paper.put("data_source", d.get("source"), shared=True)
+    return news_today()
+
+
+def news_today():
+    """อ่านข่าวหุ้นทุกตัววันละครั้ง (Claude 1 ครั้ง) เก็บไว้ให้เว็บ + รอบรายสัปดาห์ใช้ร่วมกัน"""
+    old = paper.get("news_digest", shared=True) or {}
+    today = str(datetime.now(timezone.utc).date())
+    if old.get("date") == today and old.get("enabled") and not old.get("error"):
+        return old
+    try:
+        dig = news_agent.digest()
+    except Exception as e:
+        dig = {"enabled": True, "date": today, "stocks": {}, "error": f"News Agent ล้มเหลว: {str(e)[:150]}"}
+    if dig.get("enabled"):
+        hot = [f"{t} {i['th'][:40]}" for t, s in dig["stocks"].items() for i in s["items"] if i["importance"] >= 3]
+        paper.log("news", "สรุปข่าวประจำวัน", {"source": dig.get("source"), "flags": {t: s["flag"] for t, s in dig["stocks"].items() if s["flag"] != "ok"},
+                                              "important": hot[:8], "error": dig.get("error")}, shared=True)
+    paper.put("news_digest", dig, shared=True)
+    return dig
 
 
 # ---------------------------------------------------------------- สร้างแพ็กเกจตัดสินใจ
@@ -134,7 +153,7 @@ def _shared_context(d, date, as_of):
     quality = data_agent.quality_report(d, as_of or datetime.now())
     ind = regime_agent.indicators(close)
     macro = macro_agent.assess(close, d["fx"], date)
-    return {"quality": quality, "ind": ind, "macro": macro}
+    return {"quality": quality, "ind": ind, "macro": macro, "news": news_today()}
 
 
 def _weekly_one(d, ctx, as_of):
@@ -171,13 +190,13 @@ def _weekly_one(d, ctx, as_of):
     held_risky = [t for t in pos if config.UNIVERSE[t]["kind"] in RISKY]
 
     # กลยุทธ์เสนอ → ข่าวกรอง → Risk Manager บังคับกฎ
-    if meta["uses_ai"]:
-        news_pre = news_agent.screen(list(pos))   # AI เห็นธงข่าวของสิ่งที่ถืออยู่ก่อนเลือก
+    dig = ctx.get("news")
+    if meta["uses_ai"]:   # AI Pick เห็นประเด็นข่าวของหุ้นทุกตัว (รวมข่าวดี เช่น สินค้าใหม่)
         prop = meta["module"].propose(close, ind, date, reg, held=held_risky,
-                                      extra={"news": news_pre.get("flags"), "macro": macro.get("note")})
-    else:
+                                      extra={"news": news_agent.for_ai(dig), "macro": macro.get("note")})
+    else:                 # กลยุทธ์กฎ: ข่าวไม่มีผลกับการเลือก มีแค่ธง block ที่ตัดออก
         prop = meta["module"].propose(close, ind, date, reg, held=held_risky)
-    news = news_agent.screen([t for t in prop["weights"] if config.UNIVERSE[t]["kind"] in RISKY])
+    news = news_agent.screen([t for t in prop["weights"] if config.UNIVERSE[t]["kind"] in RISKY], dig)
     with paper.conn() as c:
         peak = c.execute("SELECT MAX(usd) m FROM equity WHERE portfolio=?", (P,)).fetchone()["m"] or equity
     dd = max(0.0, 1 - equity / peak)
@@ -206,7 +225,9 @@ def _weekly_one(d, ctx, as_of):
 
     packet = {"portfolio": P, "strategy": meta["name"], "signal_date": str(date.date()), "regime": reg, "target": target,
               "orders": orders, "equity": round(equity, 2), "cash": round(cash, 2), "drawdown": round(dd, 4),
-              "held_risky": held_risky, "news": news, "macro": macro, "risk_log": fin["log"], "ranking": prop["ranking"],
+              "held_risky": held_risky, "news": news, "macro": macro,
+              "news_items": {t: (dig or {}).get("stocks", {}).get(t, {}).get("items", [])
+                             for t in sorted(set(target) | set(pos)) if (dig or {}).get("stocks", {}).get(t, {}).get("items")}, "risk_log": fin["log"], "ranking": prop["ranking"],
               "ai_view": prop.get("view"), "prev_regime": paper.get("prev_regime"), "quality": quality,
               "data_source": d.get("source")}
     audit = auditor_agent.audit(packet, d, quality)

@@ -76,10 +76,11 @@ def consistency_test(weeks=40):
 class FakeLLM:
     """Claude จำลอง: ตอบตามบทที่กำหนด เพื่อทดสอบว่าโค้ดรอบๆ AI บังคับกฎจริง"""
     def __init__(self, script):
-        self.script, self.calls = script, []
+        self.script, self.calls, self.inputs = script, [], {}
 
     def __call__(self, agent, system, user, max_tokens=1500):
         self.calls.append(agent)
+        self.inputs[agent] = user
         return self.script.get(agent)
 
 
@@ -92,19 +93,30 @@ def ai_test():
     reg = regime_agent.assess(d["close"], ind, date)
     fake = FakeLLM({
         "ai_pick": {"weights": {"NVDA": 0.6, "AAPL": 0.3, "QQQ": 0.3, "FAKE": 0.5, "TLT": -1}, "why": {"NVDA": "ชอบ"}, "view": "ลุย"},
-        "news": {"flags": [{"ticker": "AAPL", "flag": "block", "reason": "ถูกสอบสวน"}]},
+        "news": {"stocks": [{"ticker": "AAPL", "flag": "block", "reason": "ถูกสอบสวน"},
+                            {"ticker": "NVDA", "flag": "ok", "reason": "", "items": [
+                                {"type": "product", "tone": "positive", "importance": 3, "th": "เปิดตัวชิปใหม่", "src": [2]}]}]},
         "macro": {"risk_level": "high", "note": "วิกฤต"},
         "reporter": {"summary": "สรุป", "risks": ["เสี่ยง"]},
     })
-    orig_ask, orig_enabled = llm.ask_json, llm.enabled
+    from agents import news_agent, macro_agent
+    fake_news = {"AAPL": [{"title": "AAPL probe", "url": "u1"}], "NVDA": [{"title": "NVDA launches chip", "url": "https://x/nvda"}]}
+    today = __import__("datetime").date.today()
+    soon = str(today + __import__("datetime").timedelta(days=2))
+    orig_ask, orig_enabled, orig_fetch = llm.ask_json, llm.enabled, news_agent.fetch
     llm.ask_json, llm.enabled = fake, lambda: True
+    news_agent.fetch = lambda tickers, today=None: (fake_news, {"MSFT": soon}, "test")
     try:
         from strategies import ai_pick
-        from agents import news_agent, macro_agent
+        dig = news_agent.digest()
+        assert dig["stocks"]["NVDA"]["items"][0]["links"][0]["url"] == "https://x/nvda", dig["stocks"]["NVDA"]
+        assert dig["stocks"]["MSFT"]["flag"] == "caution", "งบใกล้ออกต้องเป็น caution (โค้ดตัดสิน)"
+        assert dig["stocks"]["AAPL"]["flag"] == "block"
+        print("[5] ข่าว: NVDA สินค้าใหม่ (ดี, สำคัญ 3) · MSFT งบใกล้ออก → caution · AAPL → block")
         prop = ai_pick.propose(d["close"], ind, date, reg)
         w = prop["weights"]
         assert "FAKE" not in w and "TLT" not in w and abs(sum(w.values()) - 1) < 1e-6, w
-        fin = risk_agent.apply(w, blocked=news_agent.screen(list(w), headlines={"AAPL": ["x"], "NVDA": ["y"]})["blocked"])["weights"]
+        fin = risk_agent.apply(w, blocked=news_agent.screen(list(w), dig)["blocked"])["weights"]
         assert fin.get("AAPL", 0) == 0, "ข่าว block แล้ว AAPL ต้องหายไป"
         assert fin["NVDA"] <= config.RISK["max_stock"] + 1e-6 and fin["QQQ"] <= config.RISK["max_etf"] + 1e-6, fin
         assert not risk_agent.check(fin), risk_agent.check(fin)
@@ -119,8 +131,18 @@ def ai_test():
         print(f"[5] วงจรเต็ม 4 พอร์ต: {rows}")
         assert rows["ai_pick"][1] != "fail" and all(v[0] in ("awaiting", "no_action") for v in rows.values()), rows
         assert "ai_pick" in fake.calls and "macro" in fake.calls and "reporter" in fake.calls
+        assert "เปิดตัวชิปใหม่" in fake.inputs["ai_pick"], "AI Pick ต้องเห็นข่าวดีของหุ้นทุกตัว"
+        assert fake.calls.count("news") == 2, "รอบสัปดาห์ต้องอ่านข่าวครั้งเดียว ใช้ร่วมทุกพอร์ต"
+        assert paper.get("news_digest", shared=True)["stocks"]["NVDA"]["items"], "เว็บต้องมี digest ให้อ่าน"
+        # ข่าวดีไม่มีผลกับกลยุทธ์กฎ: momentum ได้น้ำหนักเท่ากับตอนไม่มี AI เลย
+        mom = json.loads(paper.conn().execute("SELECT data FROM packets WHERE portfolio='momentum'").fetchone()["data"])["target"]
+        llm.enabled = lambda: False
+        from strategies import momentum
+        base = risk_agent.apply(momentum.propose(d["close"], ind, date, reg)["weights"], portfolio="momentum")["weights"]
+        print(f"[5] ข่าวดีไม่เปลี่ยน momentum: {mom == base or 'ต่างเพราะมหภาค/บล็อก'}")
+        assert set(mom) - {"AAPL"} <= set(base) | {"SHY"}, (mom, base)
     finally:
-        llm.ask_json, llm.enabled = orig_ask, orig_enabled
+        llm.ask_json, llm.enabled, news_agent.fetch = orig_ask, orig_enabled, orig_fetch
 
 
 if __name__ == "__main__":

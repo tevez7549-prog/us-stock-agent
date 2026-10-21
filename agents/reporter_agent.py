@@ -39,6 +39,12 @@ def template(packet, audit):
         flagged = [f for f in n["flags"] if f.get("flag") != "ok"]
         if flagged:
             lines.append("ธงข่าว: " + " · ".join(f"{f['ticker']} {f.get('flag')} ({f.get('reason', '')[:50]})" for f in flagged))
+    tone = {"positive": "ข่าวดี", "negative": "ข่าวร้าย", "neutral": "ข่าว"}
+    imp = [(t, i) for t, its in (packet.get("news_items") or {}).items() for i in its if i.get("importance", 1) >= 2]
+    if imp:
+        lines.append("ประเด็นข่าวของหุ้นในพอร์ต: " + " · ".join(f"{t} {tone.get(i['tone'], 'ข่าว')}: {i['th'][:70]}" for t, i in imp[:6]))
+        if packet.get("portfolio") != "ai_pick":
+            lines.append("(ข่าวดีไม่มีผลกับกลยุทธ์นี้ — ใช้กฎตัวเลขอย่างเดียว มีแค่ข่าวร้ายแรงที่ตัดออก)")
     if packet.get("risk_log"):
         lines.append("Risk Manager ปรับ: " + " · ".join(packet["risk_log"]))
     if audit["fails"]:

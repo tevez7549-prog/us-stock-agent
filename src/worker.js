@@ -308,8 +308,9 @@ async function agentSql(req, env) {
 async function agentSecret(req, env, url) {
   if (!(await agentAuthed(req, env))) return json({ error: 'unauthorized' }, 401);
   const name = url.searchParams.get('name');
-  if (name !== 'anthropic') return json({ error: 'unknown secret' }, 400);   // ให้เอเจนต์อ่านได้เฉพาะ key ของ Claude
-  return json({ value: await getSecret(env, name) });
+  if (name === 'anthropic') return json({ value: await getSecret(env, name) });
+  if (name === 'finnhub') return json({ value: await finnhubKey(env) });     // ข่าว + ปฏิทินงบ
+  return json({ error: 'unknown secret' }, 400);   // เอเจนต์อ่านได้เฉพาะ 2 key นี้
 }
 
 export default {

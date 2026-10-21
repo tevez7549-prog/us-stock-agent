@@ -15,23 +15,34 @@ import paper
 _KEY = None
 
 
+_SECRETS = {}
+
+
+def secret(name):
+    """ขอค่าลับจาก Worker (/agent/secret?name=...) ใช้ OIDC/AGENT_TOKEN — ได้เฉพาะ anthropic / finnhub"""
+    if name in _SECRETS:
+        return _SECRETS[name]
+    v = None
+    if paper.remote():
+        c = paper.conn()
+        try:
+            req = urllib.request.Request(
+                c.url.replace("/agent/sql", f"/agent/secret?name={name}"),
+                headers={"authorization": f"Bearer {c._token()}", "user-agent": "us-stock-agent/1"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                v = json.loads(r.read()).get("value")
+        except Exception as e:
+            print(f"ขอ {name} จาก Worker ไม่ได้:", e)
+    _SECRETS[name] = v
+    return v
+
+
 def api_key():
     global _KEY
     if _KEY:
         return _KEY
-    k = os.environ.get("ANTHROPIC_API_KEY")
-    if not k and paper.remote():
-        c = paper.conn()
-        try:
-            req = urllib.request.Request(
-                c.url.replace("/agent/sql", "/agent/secret?name=anthropic"),
-                headers={"authorization": f"Bearer {c._token()}", "user-agent": "us-stock-agent/1"})
-            with urllib.request.urlopen(req, timeout=30) as r:
-                k = json.loads(r.read()).get("value")
-        except Exception as e:
-            print("ขอ key จาก Worker ไม่ได้:", e)
-    _KEY = k
-    return k
+    _KEY = os.environ.get("ANTHROPIC_API_KEY") or secret("anthropic")
+    return _KEY
 
 
 def enabled():

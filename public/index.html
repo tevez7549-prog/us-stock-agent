@@ -100,6 +100,10 @@
   </div>
   <div class="panel"><h2>เปรียบเทียบ</h2><div class="scroll"><table id="cmpTbl" class="mono"></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">ทุกพอร์ตใช้ Risk Manager, ข่าว และมหภาคชุดเดียวกัน ต่างกันแค่วิธีเลือกสินทรัพย์ · AI Pick ไม่มี backtest เพราะ Claude รู้อดีตอยู่แล้ว</div></div>
+  <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">ข่าวหุ้น <span class="muted" id="newsMeta"></span></h2>
+      <select id="newsSel"><option value="2">เฉพาะข่าวสำคัญ</option><option value="1">ทั้งหมด</option></select></div>
+    <div id="newsBox" style="margin-top:8px"></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">AI อ่านข่าว 7 วันของหุ้นทุกตัววันละครั้ง · ข่าวดีมีผลกับ AI Pick เท่านั้น · ธง "ตัดออก" ใช้กับทุกพอร์ต · งบใกล้ออก = ระวัง (ราคาอาจกระโดด)</div></div>
   <div class="panel"><div class="row" style="justify-content:space-between"><h2 id="posTitle" style="margin:0">สิ่งที่ถืออยู่</h2><select id="posSel"></select></div><div class="scroll" style="margin-top:8px"><table id="posTbl"></table></div></div>
 </section>
 
@@ -283,8 +287,31 @@ function render(){
     + (rows.length ? rows.map(p => { const pl = p.cost_usd ? p.value/p.cost_usd-1 : null;
       return `<tr><td class="l mono">${p.ticker}</td><td class="l muted">${KIND[UNI[p.ticker]]||""}</td><td class="mono">${fmt(p.shares,4)}</td><td class="mono">${fmt(p.price)}</td><td class="mono ${cls(p.day)}">${p.day==null?"—":pct(p.day,2)}</td><td class="mono">${fmt(p.value)}</td><td class="mono">${fmt(p.value/t.total*100,1)}%</td><td class="mono">${fmt(p.cost_usd)}</td><td class="mono ${cls(pl)}">${pct(pl,2)}</td></tr>`; }).join("")
       : `<tr><td class="l muted" colspan="9">ยังไม่มี — รอแพ็กเกจแล้วอนุมัติออเดอร์</td></tr>`);
+  renderNews();
 }
 $("posSel").onchange = e => { posPort = e.target.value; render(); };
+const esc = x => String(x ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const NTYPE = {product:"สินค้าใหม่",earnings:"งบ",deal:"ดีล/สัญญา",regulatory:"กฎหมาย/คดี",management:"ผู้บริหาร",analyst:"นักวิเคราะห์",other:"อื่นๆ"};
+function renderNews(){
+  const g = S && S.news_digest, min = +$("newsSel").value;
+  if (!g){ $("newsBox").innerHTML = '<div class="muted">ยังไม่มี — จะมีหลังรอบรายวันครั้งถัดไป</div>'; $("newsMeta").textContent = ""; return; }
+  $("newsMeta").textContent = `· ${g.date || ""}${g.source ? " · " + g.source : ""}`;
+  if (!g.enabled){ $("newsBox").innerHTML = `<div class="muted">${esc(g.note)}</div>`; return; }
+  if (g.error){ $("newsBox").innerHTML = `<div class="alert bad">${esc(g.error)}</div>`; return; }
+  const held = new Set(allPositions()), rank = {block:0, caution:1, ok:2};
+  const rows = Object.entries(g.stocks || {}).map(([t,s]) => ({t, s, items:(s.items||[]).filter(i => i.importance >= min)}))
+    .filter(r => r.items.length || r.s.flag !== "ok")
+    .sort((a,b) => rank[a.s.flag]-rank[b.s.flag] || Math.max(0,...b.items.map(i=>i.importance)) - Math.max(0,...a.items.map(i=>i.importance)));
+  $("newsBox").innerHTML = rows.length ? rows.map(({t,s,items}) => `<div style="padding:8px 0;border-top:1px solid var(--line)">
+      <div class="row" style="gap:6px"><b class="mono">${esc(t)}</b>${held.has(t)?'<span class="badge">ถืออยู่</span>':""}
+        ${s.flag==="block"?'<span class="badge bad">ตัดออก</span>':s.flag==="caution"?'<span class="badge warn">ระวัง</span>':""}
+        ${s.reason && s.flag!=="ok"?`<span class="muted" style="font-size:12px">${esc(s.reason)}</span>`:""}${s.earnings?`<span class="muted" style="font-size:12px">· งบ ${esc(s.earnings)}</span>`:""}</div>
+      ${items.map(i => `<div style="font-size:13px;margin-top:4px"><span class="${i.tone==="positive"?"up":i.tone==="negative"?"down":"muted"}">${i.tone==="positive"?"▲":i.tone==="negative"?"▼":"•"}</span>
+        <span class="badge">${NTYPE[i.type]||i.type}</span> ${"★".repeat(i.importance)} ${esc(i.th)}
+        ${(i.links||[]).filter(l => /^https?:\/\//.test(l.url)).map((l,k) => ` <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" title="${esc(l.title)}" style="color:var(--accent);font-size:12px">[${esc(l.source||"ข่าว "+(k+1))}]</a>`).join("")}</div>`).join("")}
+    </div>`).join("") : '<div class="muted">ไม่มีข่าวสำคัญของหุ้นในรายชื่อ 7 วันนี้</div>';
+}
+$("newsSel").onchange = renderNews;
 async function refreshQuotes(){
   const syms = allPositions();
   if (!S || !S.live_quotes || !syms.length){ $("liveBadge").hidden = true; return; }
