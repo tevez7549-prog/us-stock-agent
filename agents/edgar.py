@@ -89,20 +89,25 @@ def filings(ticker, cik, today=None, days=7, max_docs=3):
     return out
 
 
+LAST = {}   # สรุปรอบล่าสุด ให้ news_agent บันทึกลง journal (log ของ GitHub เปิดดูยาก)
+
+
 def fetch(tickers, today=None):
     """{ticker: [8-K]} ของหุ้นที่มี CIK — ดึงไม่ได้ตัวไหนก็ข้ามตัวนั้น"""
-    out, fails = {}, 0
+    out, errs = {}, []
     for t in tickers:
         cik = config.info(t).get("cik")
         try:
             out[t] = filings(t, cik, today)
         except Exception as e:
-            fails += 1
             out[t] = []
-            print("EDGAR", t, e)
-            if fails >= 5 and not any(out.values()):
-                print("EDGAR ใช้งานไม่ได้ ข้ามทั้งหมด")
+            errs.append(f"{t}: {str(e)[:120]}")
+            if len(errs) >= 5 and not any(out.values()):
+                errs.append("ล้ม 5 ตัวติด ข้ามที่เหลือ")
                 break
+    LAST.clear()
+    LAST.update({"checked": len(out), "docs": sum(len(v) for v in out.values()),
+                 "no_cik": [t for t in tickers if not config.info(t).get("cik")][:10], "errors": errs[:6]})
     return out
 
 

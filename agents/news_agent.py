@@ -106,8 +106,9 @@ def fetch(tickers, today=None):
             news[t] = docs + news.get(t, [])
         if any(sec.values()):
             src += "+sec"
+        llm.paper.log("news", "SEC EDGAR", edgar.LAST)
     except Exception as e:
-        print("EDGAR", e)
+        llm.paper.log("news", "SEC EDGAR ล้มเหลว", {"error": str(e)[:300]})
     earn = {}
     if key:
         try:

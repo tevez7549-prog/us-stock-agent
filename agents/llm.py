@@ -57,12 +57,22 @@ def ask_json(agent, system, user, max_tokens=1500):
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=key)
+        # ให้ตอบผ่าน tool บังคับ → ได้ JSON ที่ parse แล้วเสมอ (ข้อความไทยที่มีเครื่องหมายคำพูดไม่ทำให้พัง)
         msg = client.messages.create(
             model=config.CLAUDE_MODEL, max_tokens=max_tokens,
-            system=system + "\n\nตอบเป็น JSON อย่างเดียว ห้ามมีข้อความอื่นนอก JSON",
-            messages=[{"role": "user", "content": user}])
-        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-        data = json.loads(text[text.find("{"): text.rfind("}") + 1])
+            system=system + "\n\nส่งคำตอบผ่านเครื่องมือ submit เท่านั้น โดยใช้โครงสร้างตามรูปแบบข้างบน",
+            messages=[{"role": "user", "content": user}],
+            tools=[{"name": "submit", "description": "ส่งคำตอบเป็น JSON ตามรูปแบบที่กำหนดใน system prompt",
+                    "input_schema": {"type": "object", "additionalProperties": True}}],
+            tool_choice={"type": "tool", "name": "submit"})
+        if msg.stop_reason == "max_tokens":
+            raise ValueError(f"คำตอบยาวเกิน max_tokens={max_tokens}")
+        data = next((b.input for b in msg.content if getattr(b, "type", "") == "tool_use"), None)
+        if data is None:   # เผื่อโมเดลตอบเป็นข้อความ
+            text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+            data = json.loads(text[text.find("{"): text.rfind("}") + 1])
+        if not isinstance(data, dict):
+            raise ValueError("คำตอบไม่ใช่ JSON object")
         paper.log(agent, "เรียก Claude", {"in": msg.usage.input_tokens, "out": msg.usage.output_tokens})
         return data
     except Exception as e:
