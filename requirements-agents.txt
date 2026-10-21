@@ -5,3 +5,4 @@ fastapi
 uvicorn
 anthropic>=1.17,<2
 python-dotenv
+json-repair
