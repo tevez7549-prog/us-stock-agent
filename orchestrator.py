@@ -146,7 +146,7 @@ def news_today(d=None, ind=None):
     """อ่านข่าววันละครั้ง (Claude 1 ครั้ง) เก็บไว้ให้เว็บ + รอบรายสัปดาห์ใช้ร่วมกัน"""
     old = paper.get("news_digest", shared=True) or {}
     today = str(datetime.now(timezone.utc).date())
-    if old.get("date") == today and old.get("enabled") and not old.get("error"):
+    if old.get("date") == today and old.get("enabled") and not old.get("error") and old.get("stocks"):
         return old
     try:
         dig = news_agent.digest(watchlist(d["close"], ind) if d is not None else None)

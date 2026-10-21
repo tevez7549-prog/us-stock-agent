@@ -44,6 +44,8 @@ GICS_GROUP = {
 SP500_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "universe", "sp500.csv")
 SP500_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
 UNIVERSE = {}
+# SEC ขอให้ระบุผู้ติดต่อใน User-Agent ของโปรแกรมอัตโนมัติ (ตั้ง env SEC_CONTACT = อีเมลเจ้าของได้)
+SEC_USER_AGENT = f"us-stock-agent/1.0 {os.environ.get('SEC_CONTACT') or 'github.com/tevez7549-prog/us-stock-agent'}"
 
 
 def yf_symbol(sym):
@@ -51,7 +53,7 @@ def yf_symbol(sym):
 
 
 def read_sp500(text=None):
-    """แถว (symbol แบบ Yahoo, ชื่อบริษัท, sector) จาก CSV ของ S&P 500"""
+    """แถว (symbol แบบ Yahoo, ชื่อบริษัท, sector, CIK ของ SEC) จาก CSV ของ S&P 500"""
     import csv
     import io
     if text is None:
@@ -61,13 +63,14 @@ def read_sp500(text=None):
     for r in csv.DictReader(io.StringIO(text)):
         sym, sec = (r.get("Symbol") or "").strip(), (r.get("GICS Sector") or "").strip()
         if sym and sec in GICS_GROUP:
-            rows.append((yf_symbol(sym), (r.get("Security") or "").strip(), sec))
+            rows.append((yf_symbol(sym), (r.get("Security") or "").strip(), sec, (r.get("CIK") or "").strip()))
     return rows
 
 
 def set_stocks(rows):
     """แทนที่รายชื่อหุ้นทั้งหมด (แก้ dict เดิม เพื่อให้ทุกโมดูลเห็นพร้อมกัน)"""
-    stocks = {sym: {"kind": "stock", "group": GICS_GROUP[sec], "name": name} for sym, name, sec in rows if sym not in FIXED}
+    stocks = {sym: {"kind": "stock", "group": GICS_GROUP[sec], "name": name, "cik": int(cik) if cik.isdigit() else None}
+              for sym, name, sec, cik in rows if sym not in FIXED}
     UNIVERSE.clear()
     UNIVERSE.update(FIXED)
     UNIVERSE.update(stocks)

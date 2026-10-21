@@ -84,6 +84,29 @@ class FakeLLM:
         return self.script.get(agent)
 
 
+def edgar_test():
+    """SEC 8-K: อ่านรายการเอกสาร + ข่าวประชาสัมพันธ์แนบ, ชนิดร้ายแรงโค้ดติดธงเอง (ไม่พึ่ง AI)"""
+    from agents import edgar
+    import datetime as dt
+    today = dt.date(2026, 10, 21)
+    sub = {"filings": {"recent": {"form": ["8-K", "10-Q", "8-K", "8-K"], "filingDate": ["2026-10-20", "2026-10-18", "2026-10-16", "2026-09-01"],
+                                  "items": ["8.01,9.01", "", "4.02", "2.02"], "accessionNumber": ["0001-26-1", "0001-26-2", "0001-26-3", "0001-26-4"],
+                                  "primaryDocument": ["a.htm", "q.htm", "b.htm", "c.htm"]}}}
+    pages = {"submissions": sub, "/000126" + "1/index.json": {"directory": {"item": [{"name": "a.htm"}, {"name": "ex99-1.htm"}]}},
+             "ex99-1.htm": "<html><style>x{}</style><p>ACME launches the <b>Widget 2</b> &amp; more</p></html>"}
+    orig = edgar._get
+    edgar._get = lambda url, as_json=True: next(v for k, v in pages.items() if k in url)
+    try:
+        docs = edgar.filings("ACME", 123, today)
+        assert [d["date"] for d in docs] == ["2026-10-20", "2026-10-16"], docs   # ตัด 10-Q และ 8-K ที่เก่ากว่า 7 วัน
+        assert "Widget 2 & more" in docs[0]["summary"] and "x{}" not in docs[0]["summary"], docs[0]
+        assert edgar.hard_flags(docs) == ("block", edgar.BLOCK_ITEMS["4.02"])
+        assert edgar.hard_flags(docs[:1]) is None
+        print("[6] EDGAR: อ่าน 8-K 2 ฉบับใน 7 วัน + ข่าวประชาสัมพันธ์แนบ · ยื่นแก้งบ (4.02) → block โดยโค้ด")
+    finally:
+        edgar._get = orig
+
+
 def ai_test():
     d = data_agent.clean(data_agent.synthetic(seed=7))
     d["source"] = "synthetic"
@@ -106,6 +129,9 @@ def ai_test():
     orig_ask, orig_enabled, orig_fetch = llm.ask_json, llm.enabled, news_agent.fetch
     llm.ask_json, llm.enabled = fake, lambda: True
     news_agent.fetch = lambda tickers, today=None: (fake_news, {"MSFT": soon}, "test")
+    from agents import edgar
+    orig_edgar = edgar.fetch
+    edgar.fetch = lambda tickers, today=None: {}
     orig_watch = orchestrator.watchlist
     orchestrator.watchlist = lambda close, ind=None, n=30: list(dict.fromkeys(["AAPL", "NVDA", "MSFT"] + orig_watch(close, ind, n)))
     try:
@@ -146,6 +172,7 @@ def ai_test():
     finally:
         llm.ask_json, llm.enabled, news_agent.fetch = orig_ask, orig_enabled, orig_fetch
         orchestrator.watchlist = orig_watch
+        edgar.fetch = orig_edgar
 
 
 if __name__ == "__main__":
@@ -156,6 +183,7 @@ if __name__ == "__main__":
     null_test()
     lookahead_test()
     risk_test()
+    edgar_test()
     ai_test()
     consistency_test()
     paper.reset()

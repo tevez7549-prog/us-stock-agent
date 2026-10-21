@@ -1,6 +1,7 @@
 """เอเจนต์ 5 — ข่าวบริษัท (Claude)
 
 อ่านข่าว 7 วันล่าสุดของหุ้นรายตัว "ทุกตัว" ในรายชื่อ (ไม่ใช่แค่ตัวที่ถืออยู่) วันละครั้ง:
+- แหล่งข่าวทางการ: SEC EDGAR 8-K (agents/edgar.py) — ใส่ไว้หน้าสุด, ชนิดเอกสารร้ายแรง (ล้มละลาย/แก้งบ) โค้ดติดธงเอง
 - แหล่งข่าว: Finnhub company-news (หัวข่าว + เนื้อย่อ + แหล่ง + ลิงก์) ถ้าไม่มี key/ดึงไม่ได้ → หัวข่าวจาก yfinance
 - วันประกาศงบ: Finnhub earnings calendar → ภายใน 5 วันทำการ = "caution" (โค้ดตัดสิน ไม่ให้ AI เดา)
 - Claude สรุปเป็น "ประเด็นข่าว" ต่อหุ้น: ประเภท (สินค้าใหม่/งบ/ดีล/กฎหมาย/ผู้บริหาร/อื่นๆ), ดี/ร้าย/กลาง, ความสำคัญ 1–3
@@ -33,6 +34,7 @@ SYSTEM = """คุณคือนักวิเคราะห์ข่าว�
 - flag: "block" เฉพาะข่าวร้ายร้ายแรงและเฉพาะเจาะจง (ถูกสอบสวนฉ้อโกง, ผู้บริหารลาออกกะทันหัน, ลดคาดการณ์หนัก, คดีใหญ่,
   สินค้าหลักถูกแบน, ผิดนัดชำระหนี้), "caution" = ข่าวลบที่ไม่ร้ายแรง, ไม่งั้น "ok"
 - ห้ามแต่งข้อมูลที่ไม่มีในข่าว ถ้าหุ้นไหนไม่มีประเด็นจริงให้ items เป็น []
+- ข่าวที่ขึ้นต้น [SEC 8-K] คือเอกสารที่บริษัทยื่นต่อ ก.ล.ต. สหรัฐเอง (เชื่อถือได้สูงสุด) ถ้าขัดกับข่าวจากเว็บ ให้เชื่อ SEC
 - src = เลขลำดับข่าว (ตัวเลข n ในข้อมูล) ที่ใช้อ้างอิง
 รูปแบบ: {"stocks":[{"ticker":"AAPL","flag":"ok|caution|block","reason":"สั้นๆ ภาษาไทย",
  "items":[{"type":"product","tone":"positive","importance":2,"th":"สรุป 1 ประโยค ภาษาไทย","src":[3,5]}]}]}"""
@@ -97,6 +99,15 @@ def fetch(tickers, today=None):
             except Exception:
                 items = []
         news[t] = items
+    try:   # เอกสารทางการจาก SEC ไว้หน้าสุด
+        from agents import edgar
+        sec = edgar.fetch(tickers, today)
+        for t, docs in sec.items():
+            news[t] = docs + news.get(t, [])
+        if any(sec.values()):
+            src += "+sec"
+    except Exception as e:
+        print("EDGAR", e)
     earn = {}
     if key:
         try:
@@ -153,8 +164,9 @@ def digest(tickers=None, news=None, earnings=None, today=None):
         return {**base, "enabled": True, "note": "ดึงข่าวไม่ได้"}
 
     data = llm.ask_json("news", SYSTEM, "ข่าวแยกตาม ticker:\n" + json.dumps(numbered, ensure_ascii=False), 6000)
-    if not data:
-        return {**base, "enabled": True, "error": "News Agent ล้มเหลว (ใช้ค่า: ไม่มีธง)"}
+    if not data:   # AI ล้ม: ยังใช้ธงจากเอกสาร SEC ที่โค้ดตัดสินเองได้
+        base["error"] = "News Agent ล้มเหลว (ใช้ค่า: ไม่มีธง ยกเว้นเอกสาร SEC ร้ายแรง)"
+        data = {}
     got = {s.get("ticker"): s for s in data.get("stocks", []) if isinstance(s, dict)}
     out = {}
     for t in tickers:
@@ -174,12 +186,18 @@ def digest(tickers=None, news=None, earnings=None, today=None):
                           "tone": it.get("tone") if it.get("tone") in ("positive", "negative", "neutral") else "neutral",
                           "importance": max(1, min(3, int(it.get("importance") or 1))) if str(it.get("importance", "1")).isdigit() else 1,
                           "th": str(it["th"])[:200], "links": links})
+        official = [a for a in news.get(t, []) if isinstance(a, dict) and a.get("official")]
+        from agents import edgar
+        hard = edgar.hard_flags(official)
+        if hard and (hard[0] == "block" or flag == "ok"):   # เอกสารทางการร้ายแรง: โค้ดตัดสิน ไม่ขึ้นกับ AI
+            flag, reason = hard
         e = earnings.get(t)
         nb = _bdays_until(e, today) if e else None
         if nb is not None and 0 <= nb <= 5 and flag == "ok":   # งบใกล้ออก: โค้ดตัดสิน ไม่ใช่ AI
             flag, reason = "caution", f"ประกาศงบ {e} (อีก {nb} วันทำการ)"
-        out[t] = {"flag": flag, "reason": reason, "items": items, "earnings": e, "n_news": len(news.get(t, []))}
-    return {**base, "enabled": True, "stocks": out}
+        out[t] = {"flag": flag, "reason": reason, "items": items, "earnings": e, "n_news": len(news.get(t, [])),
+                  "filings": [{"date": a["date"], "title": a["title"], "url": a["url"]} for a in official][:3]}
+    return {**base, "enabled": True, "stocks": out}   # base อาจมี error (AI ล้ม) แต่ stocks ยังมีธงจาก SEC
 
 
 def screen(tickers, dig=None, headlines=None):
@@ -191,11 +209,9 @@ def screen(tickers, dig=None, headlines=None):
         return {"enabled": False, "blocked": [], "caution": [], "flags": [], "note": dig.get("note", "")}
     if not want:
         return {"enabled": True, "blocked": [], "caution": [], "flags": [], "note": "ไม่มีหุ้นรายตัวให้ตรวจ"}
-    if dig.get("error"):
-        return {"enabled": True, "blocked": [], "caution": [], "flags": [], "error": dig["error"]}
     flags = [{"ticker": t, "flag": dig["stocks"][t]["flag"], "reason": dig["stocks"][t]["reason"]}
              for t in want if t in dig.get("stocks", {})]
-    return {"enabled": True, "flags": flags, "note": dig.get("note"),
+    return {"enabled": True, "flags": flags, "note": dig.get("note"), "error": dig.get("error"),
             "blocked": [f["ticker"] for f in flags if f["flag"] == "block"],
             "caution": [f["ticker"] for f in flags if f["flag"] == "caution"]}
 
