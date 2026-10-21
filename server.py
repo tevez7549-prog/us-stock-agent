@@ -46,7 +46,7 @@ def status():
     rows = []
     for t, p in sorted(pos.items(), key=lambda kv: -kv[1]["shares"] * px[kv[0]]):
         v = p["shares"] * px[t]
-        rows.append({"ticker": t, "kind": config.UNIVERSE[t]["kind"], "group": config.UNIVERSE[t]["group"],
+        rows.append({"ticker": t, "kind": config.info(t)["kind"], "group": config.info(t)["group"],
                      "shares": round(p["shares"], 4), "price": round(float(px[t]), 2), "value": round(float(v), 2),
                      "weight": round(float(v / total), 4), "cost": round(p["cost_usd"], 2),
                      "pnl_pct": round(float(v / p["cost_usd"] - 1) * 100, 2) if p["cost_usd"] else None})

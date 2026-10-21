@@ -1,4 +1,6 @@
 """ค่าทั้งหมดของระบบ — ลิมิตความเสี่ยงอยู่ที่นี่ที่เดียว ห้ามให้เอเจนต์ AI แก้ไฟล์นี้"""
+import os
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -11,7 +13,8 @@ BASE_CCY = "USD"
 
 # ---------- จักรวาลสินทรัพย์ (ซื้อได้ใน Dime) ----------
 # group = ใช้คุมสัดส่วนรวม เช่น หุ้นเทคทุกตัว + QQQ + XLK นับเป็นกลุ่ม "tech" เดียวกัน
-UNIVERSE = {
+# ETF + สินทรัพย์ป้องกัน = รายชื่อตายตัว / หุ้นรายตัว = สมาชิก S&P 500 ทั้งหมด (universe/sp500.csv)
+FIXED = {
     # ETF ตลาดกว้าง
     "SPY":  {"kind": "etf",   "group": "us_broad"},
     "QQQ":  {"kind": "etf",   "group": "tech"},
@@ -27,25 +30,55 @@ UNIVERSE = {
     "XLP":  {"kind": "etf",   "group": "staples"},
     "XLU":  {"kind": "etf",   "group": "utilities"},
     "XLY":  {"kind": "etf",   "group": "consumer"},
-    # หุ้นรายตัวขนาดใหญ่
-    "AAPL": {"kind": "stock", "group": "tech"},
-    "MSFT": {"kind": "stock", "group": "tech"},
-    "NVDA": {"kind": "stock", "group": "tech"},
-    "GOOGL":{"kind": "stock", "group": "tech"},
-    "META": {"kind": "stock", "group": "tech"},
-    "AMZN": {"kind": "stock", "group": "consumer"},
-    "JPM":  {"kind": "stock", "group": "financial"},
-    "V":    {"kind": "stock", "group": "financial"},
-    "UNH":  {"kind": "stock", "group": "health"},
-    "LLY":  {"kind": "stock", "group": "health"},
-    "COST": {"kind": "stock", "group": "staples"},
-    "XOM":  {"kind": "stock", "group": "energy"},
     # สินทรัพย์ป้องกัน
     "TLT":  {"kind": "defensive", "group": "bond"},
     "IEF":  {"kind": "defensive", "group": "bond"},
     "GLD":  {"kind": "defensive", "group": "gold"},
     "SHY":  {"kind": "cash",      "group": "cash"},   # พันธบัตรระยะสั้น = แทนเงินสด
 }
+GICS_GROUP = {
+    "Information Technology": "tech", "Communication Services": "comm", "Consumer Discretionary": "consumer",
+    "Consumer Staples": "staples", "Health Care": "health", "Financials": "financial", "Energy": "energy",
+    "Industrials": "industrial", "Utilities": "utilities", "Materials": "materials", "Real Estate": "real_estate",
+}
+SP500_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "universe", "sp500.csv")
+SP500_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+UNIVERSE = {}
+
+
+def yf_symbol(sym):
+    return sym.strip().upper().replace(".", "-")   # BRK.B → BRK-B (แบบ Yahoo)
+
+
+def read_sp500(text=None):
+    """แถว (symbol แบบ Yahoo, ชื่อบริษัท, sector) จาก CSV ของ S&P 500"""
+    import csv
+    import io
+    if text is None:
+        with open(SP500_FILE, encoding="utf-8") as f:
+            text = f.read()
+    rows = []
+    for r in csv.DictReader(io.StringIO(text)):
+        sym, sec = (r.get("Symbol") or "").strip(), (r.get("GICS Sector") or "").strip()
+        if sym and sec in GICS_GROUP:
+            rows.append((yf_symbol(sym), (r.get("Security") or "").strip(), sec))
+    return rows
+
+
+def set_stocks(rows):
+    """แทนที่รายชื่อหุ้นทั้งหมด (แก้ dict เดิม เพื่อให้ทุกโมดูลเห็นพร้อมกัน)"""
+    stocks = {sym: {"kind": "stock", "group": GICS_GROUP[sec], "name": name} for sym, name, sec in rows if sym not in FIXED}
+    UNIVERSE.clear()
+    UNIVERSE.update(FIXED)
+    UNIVERSE.update(stocks)
+
+
+def info(t):
+    """ข้อมูลของ ticker — ตัวที่หลุดจาก S&P 500 แต่ยังถืออยู่ นับเป็นหุ้นกลุ่ม other (Risk Manager จะให้ขายออก)"""
+    return UNIVERSE.get(t) or {"kind": "stock", "group": "other", "name": t, "removed": True}
+
+
+set_stocks(read_sp500())
 BENCHMARK = "SPY"
 FX_TICKER = "THB=X"                    # บาทต่อ 1 ดอลลาร์ (Yahoo)
 CASH_PROXY = "SHY"

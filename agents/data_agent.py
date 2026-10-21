@@ -10,13 +10,48 @@ import config
 CACHE = "data/prices.pkl"
 
 
-def fetch_yfinance(start=config.DATA_START):
+def core_tickers():
+    """ตัวที่ขาดไม่ได้ (ETF/ป้องกัน/เงินสด/ดัชนีอ้างอิง) — หุ้นรายตัวหายได้บางตัว แค่ไม่ถูกเลือกรอบนั้น"""
+    return [t for t, m in config.UNIVERSE.items() if m["kind"] != "stock"] + [config.BENCHMARK]
+
+
+def _download(tickers, start):
     import yfinance as yf
-    tickers = list(config.UNIVERSE) + [config.FX_TICKER]
     raw = yf.download(tickers, start=start, auto_adjust=True, progress=False, group_by="column", threads=True)
     if raw is None or raw.empty:
+        return None, None
+    c, o = raw["Close"], raw["Open"]
+    if isinstance(c, pd.Series):   # ตัวเดียว
+        c, o = c.to_frame(tickers[0]), o.to_frame(tickers[0])
+    return c, o
+
+
+def fetch_yfinance(start=config.DATA_START, extra=()):
+    """ดึงทีละ 100 ตัว (กัน Yahoo ตัดการเชื่อมต่อ) ตัวที่ได้ข้อมูลว่างลองใหม่อีกรอบ
+    extra = ตัวที่ถืออยู่แต่หลุดจากรายชื่อแล้ว (ต้องมีราคาไว้ขาย)"""
+    tickers = list(dict.fromkeys(list(config.UNIVERSE) + list(extra) + [config.FX_TICKER]))
+    closes, opens = [], []
+    for i in range(0, len(tickers), 100):
+        c, o = _download(tickers[i:i + 100], start)
+        if c is not None:
+            closes.append(c)
+            opens.append(o)
+    if not closes:
         raise RuntimeError("yfinance ไม่ได้ข้อมูลกลับมา (เช็คอินเทอร์เน็ต)")
-    close, open_ = raw["Close"].copy(), raw["Open"].copy()
+    close, open_ = pd.concat(closes, axis=1), pd.concat(opens, axis=1)
+    close = close.loc[:, ~close.columns.duplicated()]
+    open_ = open_.loc[:, ~open_.columns.duplicated()]
+    missing = [t for t in tickers if t not in close.columns or close[t].dropna().empty]
+    if missing:
+        c, o = _download(missing, start)
+        if c is not None:
+            close = close.drop(columns=[t for t in c.columns if t in close.columns]).join(c, how="outer")
+            open_ = open_.drop(columns=[t for t in o.columns if t in open_.columns]).join(o, how="outer")
+    close = close.dropna(axis=1, how="all")
+    open_ = open_.reindex(columns=close.columns)
+    lost = [t for t in core_tickers() + [config.FX_TICKER] if t not in close.columns]
+    if lost:
+        raise RuntimeError(f"ดึงสินทรัพย์หลักไม่ได้: {', '.join(lost)}")
     fx = close.pop(config.FX_TICKER)
     open_ = open_.drop(columns=[config.FX_TICKER], errors="ignore")
     # ค่าเงิน (THB=X) ซื้อขาย 24 ชม. ทำให้มีแถวของวันที่ตลาดสหรัฐไม่ได้เปิด → เก็บเฉพาะวันที่ SPY มีราคาจริง
@@ -71,33 +106,44 @@ def clean(d):
 
 
 def quality_report(d, as_of=None):
+    """สินทรัพย์หลักมีปัญหา = ไม่ผ่าน (ห้ามอนุมัติ) / หุ้นรายตัวมีปัญหา = แค่ข้อสังเกต (ตัวนั้นไม่ถูกเลือก)"""
     c = d["close"]
     last = c.index[-1]
-    rep = {"last_date": str(last.date()), "rows": len(c), "issues": []}
+    core = set(core_tickers())
+    rep = {"last_date": str(last.date()), "rows": len(c), "tickers": c.shape[1], "issues": []}
+    expected = [t for t in config.UNIVERSE if t not in c.columns]
+    if expected:
+        rep["issues"].append({"ticker": "+", "issue": f"ไม่มีข้อมูล {len(expected)} ตัว: {', '.join(expected[:8])}"})
+    first = c.apply(lambda s: s.first_valid_index())
+    tail = c.iloc[-1]
     for t in c.columns:
         s = c[t]
-        first = s.first_valid_index()
-        if first is None:
+        if first[t] is None:
             rep["issues"].append({"ticker": t, "issue": "ไม่มีข้อมูลเลย"})
             continue
-        miss = s.loc[first:].isna().mean()
+        miss = s.loc[first[t]:].isna().mean()
         if miss > 0.02:
             rep["issues"].append({"ticker": t, "issue": f"ข้อมูลหาย {miss:.1%}"})
-        jump = s.pct_change(fill_method=None).abs().max()
-        if jump > 0.4:
-            rep["issues"].append({"ticker": t, "issue": f"ราคากระโดดวันเดียว {jump:.0%} (เช็คการแตกพาร์)"})
-        if pd.isna(s.iloc[-1]):
+        if t in core:   # หุ้นรายตัวกระโดด 40% ในวันเดียวเกิดได้จริง (งบ/ดีล) ตรวจเฉพาะสินทรัพย์หลัก
+            jump = s.pct_change(fill_method=None).abs().max()
+            if jump > 0.4:
+                rep["issues"].append({"ticker": t, "issue": f"ราคากระโดดวันเดียว {jump:.0%} (เช็คการแตกพาร์)"})
+        if pd.isna(tail[t]):
             rep["issues"].append({"ticker": t, "issue": "ไม่มีราคาวันล่าสุด"})
     if as_of is not None:
         age = (pd.Timestamp(as_of) - last).days
         rep["age_days"] = age
         if age > 5:
             rep["issues"].append({"ticker": "*", "issue": f"ข้อมูลเก่า {age} วัน"})
-    rep["ok"] = not any(i["ticker"] == "*" or "ไม่มี" in i["issue"] for i in rep["issues"])
+    rep["ok"] = not any(i["ticker"] == "*" or (i["ticker"] in core and ("ไม่มี" in i["issue"] or "กระโดด" in i["issue"]))
+                        for i in rep["issues"])
+    n = len(rep["issues"])
+    rep["issues"] = sorted(rep["issues"], key=lambda i: (i["ticker"] not in core and i["ticker"] != "*"))[:40]
+    rep["n_issues"] = n
     return rep
 
 
-def load(source="auto", refresh=False, allow_synthetic=True):
+def load(source="auto", refresh=False, allow_synthetic=True, extra=()):
     """auto = ใช้ cache ถ้าอัปเดตวันนี้แล้ว, ไม่งั้นดึง yfinance, ดึงไม่ได้ใช้ cache เก่า, ไม่มีเลยใช้ข้อมูลจำลอง
     allow_synthetic=False (บนคลาวด์) → ดึงไม่ได้ให้ล้มเหลวเลย ห้ามใช้ข้อมูลปลอมกับพอร์ตจริง"""
     os.makedirs("data", exist_ok=True)
@@ -105,11 +151,12 @@ def load(source="auto", refresh=False, allow_synthetic=True):
         return clean(synthetic()), "synthetic"
     if not refresh and os.path.exists(CACHE):
         cached = pd.read_pickle(CACHE)
-        fresh = pd.Timestamp.now().normalize() - cached["close"].index[-1] <= pd.Timedelta(days=1)
+        fresh = (pd.Timestamp.now().normalize() - cached["close"].index[-1] <= pd.Timedelta(days=1)
+                 and len(set(config.UNIVERSE) & set(cached["close"].columns)) >= 0.9 * len(config.UNIVERSE))  # cache รายชื่อเก่า = ดึงใหม่
         if fresh or source == "cache":
             return clean(cached), "cache"
     try:
-        d = drop_unfinished_day(fetch_yfinance())
+        d = drop_unfinished_day(fetch_yfinance(extra=extra))
         pd.to_pickle(d, CACHE)
         return clean(d), "yfinance"
     except Exception as e:

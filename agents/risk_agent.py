@@ -38,7 +38,7 @@ def apply(weights, drawdown=0.0, blocked=(), r=config.RISK, portfolio=None):
     # 2) ลิมิตต่อกลุ่ม
     groups = {}
     for t, v in w.items():
-        g = config.UNIVERSE[t]["group"]
+        g = config.info(t)["group"]
         if g != "cash":
             groups.setdefault(g, []).append(t)
     for g, ts in groups.items():
@@ -53,7 +53,7 @@ def apply(weights, drawdown=0.0, blocked=(), r=config.RISK, portfolio=None):
     # 3) Drawdown ของพอร์ต → ลดของเสี่ยงลงครึ่งหนึ่ง
     if drawdown >= r["dd_cut_level"]:
         for t in list(w):
-            if config.UNIVERSE[t]["kind"] in ("etf", "stock"):
+            if config.info(t)["kind"] in ("etf", "stock"):
                 cut = w[t] * (1 - r["dd_cut_factor"])
                 w[t] -= cut
                 w[cash] = w.get(cash, 0) + cut

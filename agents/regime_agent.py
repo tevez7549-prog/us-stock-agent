@@ -44,3 +44,11 @@ def assess(close, ind, date, p=config.STRATEGY, prev_up=None):
         "spy_above_sma": spy_up,
         "reasons": reasons,
     }
+
+
+def top_stocks(close, ind, date, n=30):
+    """หุ้นรายตัวที่โมเมนตัมสูงสุด n ตัว (มีข้อมูลครบ) — ใช้เลือกว่าจะอ่านข่าว/ให้ AI ดูตัวไหน"""
+    mom, sma, px = ind["mom"].loc[date], ind["sma"].loc[date], close.loc[date]
+    ok = [t for t, m in config.UNIVERSE.items()
+          if m["kind"] == "stock" and t in close.columns and mom[t] == mom[t] and sma[t] == sma[t] and px[t] == px[t]]
+    return sorted(ok, key=lambda t: -mom[t])[:n]

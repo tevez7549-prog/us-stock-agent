@@ -106,14 +106,16 @@ def ai_test():
     orig_ask, orig_enabled, orig_fetch = llm.ask_json, llm.enabled, news_agent.fetch
     llm.ask_json, llm.enabled = fake, lambda: True
     news_agent.fetch = lambda tickers, today=None: (fake_news, {"MSFT": soon}, "test")
+    orig_watch = orchestrator.watchlist
+    orchestrator.watchlist = lambda close, ind=None, n=30: list(dict.fromkeys(["AAPL", "NVDA", "MSFT"] + orig_watch(close, ind, n)))
     try:
         from strategies import ai_pick
-        dig = news_agent.digest()
+        dig = news_agent.digest(["AAPL", "NVDA", "MSFT"])
         assert dig["stocks"]["NVDA"]["items"][0]["links"][0]["url"] == "https://x/nvda", dig["stocks"]["NVDA"]
         assert dig["stocks"]["MSFT"]["flag"] == "caution", "งบใกล้ออกต้องเป็น caution (โค้ดตัดสิน)"
         assert dig["stocks"]["AAPL"]["flag"] == "block"
         print("[5] ข่าว: NVDA สินค้าใหม่ (ดี, สำคัญ 3) · MSFT งบใกล้ออก → caution · AAPL → block")
-        prop = ai_pick.propose(d["close"], ind, date, reg)
+        prop = ai_pick.propose(d["close"], ind, date, reg, held=("NVDA", "AAPL"))   # ถืออยู่ = อยู่ในรายชื่อที่ AI เลือกได้
         w = prop["weights"]
         assert "FAKE" not in w and "TLT" not in w and abs(sum(w.values()) - 1) < 1e-6, w
         fin = risk_agent.apply(w, blocked=news_agent.screen(list(w), dig)["blocked"])["weights"]
@@ -143,6 +145,7 @@ def ai_test():
         assert set(mom) - {"AAPL"} <= set(base) | {"SHY"}, (mom, base)
     finally:
         llm.ask_json, llm.enabled, news_agent.fetch = orig_ask, orig_enabled, orig_fetch
+        orchestrator.watchlist = orig_watch
 
 
 if __name__ == "__main__":

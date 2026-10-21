@@ -103,7 +103,7 @@
   <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">ข่าวหุ้น <span class="muted" id="newsMeta"></span></h2>
       <select id="newsSel"><option value="2">เฉพาะข่าวสำคัญ</option><option value="1">ทั้งหมด</option></select></div>
     <div id="newsBox" style="margin-top:8px"></div>
-    <div class="muted" style="font-size:12px;margin-top:8px">AI อ่านข่าว 7 วันของหุ้นทุกตัววันละครั้ง · ข่าวดีมีผลกับ AI Pick เท่านั้น · ธง "ตัดออก" ใช้กับทุกพอร์ต · งบใกล้ออก = ระวัง (ราคาอาจกระโดด)</div></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">AI อ่านข่าว 7 วันวันละครั้ง ของหุ้นที่ถืออยู่ + หุ้นโมเมนตัมสูงสุด 30 ตัวใน S&P 500 · ข่าวดีมีผลกับ AI Pick เท่านั้น · ธง "ตัดออก" ใช้กับทุกพอร์ต · งบใกล้ออก = ระวัง (ราคาอาจกระโดด)</div></div>
   <div class="panel"><div class="row" style="justify-content:space-between"><h2 id="posTitle" style="margin:0">สิ่งที่ถืออยู่</h2><select id="posSel"></select></div><div class="scroll" style="margin-top:8px"><table id="posTbl"></table></div></div>
 </section>
 
@@ -303,7 +303,7 @@ function renderNews(){
     .filter(r => r.items.length || r.s.flag !== "ok")
     .sort((a,b) => rank[a.s.flag]-rank[b.s.flag] || Math.max(0,...b.items.map(i=>i.importance)) - Math.max(0,...a.items.map(i=>i.importance)));
   $("newsBox").innerHTML = rows.length ? rows.map(({t,s,items}) => `<div style="padding:8px 0;border-top:1px solid var(--line)">
-      <div class="row" style="gap:6px"><b class="mono">${esc(t)}</b>${held.has(t)?'<span class="badge">ถืออยู่</span>':""}
+      <div class="row" style="gap:6px"><b class="mono">${esc(t)}</b><span class="muted" style="font-size:12px">${esc((S.names||{})[t]||"")}</span>${held.has(t)?'<span class="badge">ถืออยู่</span>':""}
         ${s.flag==="block"?'<span class="badge bad">ตัดออก</span>':s.flag==="caution"?'<span class="badge warn">ระวัง</span>':""}
         ${s.reason && s.flag!=="ok"?`<span class="muted" style="font-size:12px">${esc(s.reason)}</span>`:""}${s.earnings?`<span class="muted" style="font-size:12px">· งบ ${esc(s.earnings)}</span>`:""}</div>
       ${items.map(i => `<div style="font-size:13px;margin-top:4px"><span class="${i.tone==="positive"?"up":i.tone==="negative"?"down":"muted"}">${i.tone==="positive"?"▲":i.tone==="negative"?"▼":"•"}</span>
@@ -394,7 +394,7 @@ function showBt(){
   if (!b){ $("btInfo").textContent = "ยังไม่มีผล — เอเจนต์ Backtest รันทุกวันเสาร์ หรือสั่งรันโหมด backtest ใน GitHub Actions"; $("btKpi").innerHTML = ""; return; }
   const r = b.data, s = r.stats, S_ = s.strategy, B = s.benchmark, P = r.params.strategy;
   $("robPanel").hidden = !r.robustness;
-  $("btInfo").textContent = `${PORTS[btPort][0]} · รันเมื่อ ${b.created.replace("T"," ").slice(0,16)} · ${s.period}` + (btPort === "momentum" ? ` · ถือ ${P.top_n} ตัว · เส้นเทรนด์ ${P.trend_sma} วัน · โมเมนตัม ${P.mom_short}/${P.mom_long} วัน` : "");
+  $("btInfo").textContent = `${PORTS[btPort][0]} · รันเมื่อ ${b.created.replace("T"," ").slice(0,16)} · ${s.period} · ใช้รายชื่อ S&P 500 ปัจจุบันย้อนหลัง (ผลจะดีเกินจริงบ้าง เพราะไม่มีหุ้นที่เคยหลุดจากดัชนี)` + (btPort === "momentum" ? ` · ถือ ${P.top_n} ตัว · เส้นเทรนด์ ${P.trend_sma} วัน · โมเมนตัม ${P.mom_short}/${P.mom_long} วัน` : "");
   btC.a.applyOptions({color: PORTS[btPort][1]});
   $("btKpi").innerHTML = [
     ["ผลตอบแทนต่อปี", `${fmt(S_.cagr)}%`, `SPY ${fmt(B.cagr)}%`, S_.cagr - B.cagr],

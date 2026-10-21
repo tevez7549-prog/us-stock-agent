@@ -11,7 +11,7 @@ REGIME_TH = {"risk_on": "ขาขึ้น", "caution": "ระวัง", "ris
 
 def template(packet, audit):
     reg = packet["regime"]
-    risky = sum(w for t, w in packet["target"].items() if config.UNIVERSE[t]["kind"] in ("etf", "stock"))
+    risky = sum(w for t, w in packet["target"].items() if config.info(t)["kind"] in ("etf", "stock"))
     buys = [o for o in packet["orders"] if o["side"] == "BUY"]
     sells = [o for o in packet["orders"] if o["side"] == "SELL"]
     lines = [f"[{packet.get('strategy', 'Momentum')}]"]

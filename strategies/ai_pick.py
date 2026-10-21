@@ -1,6 +1,6 @@
 """กลยุทธ์ 4 — AI Pick: ให้ Claude เลือกพอร์ตเองจากข้อมูลตัวเลข (ภายใต้ Risk Manager เดียวกัน)
 
-Claude ได้เห็น: โมเมนตัม / ความผันผวน / ตำแหน่งเทียบเส้น 200 วัน ของทุกตัว, สภาวะตลาด, สิ่งที่ถืออยู่
+Claude ได้เห็น: โมเมนตัม / ความผันผวน / ตำแหน่งเทียบเส้น 200 วัน ของ ETF ทุกตัว + หุ้นที่ถือ + หุ้นโมเมนตัมสูงสุด 30 ตัวใน S&P 500, สภาวะตลาด, สิ่งที่ถืออยู่
 Claude ตอบ: น้ำหนัก (รวม ≤ 1) + เหตุผลต่อตัว
 สิ่งที่โค้ดบังคับหลังจากนั้น: ตัวที่ไม่อยู่ในรายชื่อถูกตัด, น้ำหนักติดลบถูกตัด, ส่วนที่เหลือเป็นเงินสด,
 แล้ว Risk Manager จับเพดานรายตัว/กลุ่ม/เงินสด/drawdown เหมือนพอร์ตอื่น — AI เพิ่มความเสี่ยงเกินกฎไม่ได้
@@ -14,7 +14,7 @@ from agents import llm
 
 CASH = "SHY"
 
-SYSTEM = """คุณคือผู้จัดการกองทุนที่ลงทุนระยะกลาง (ถือเป็นสัปดาห์ถึงเดือน) ในหุ้น/ETF สหรัฐจากรายชื่อที่กำหนดเท่านั้น
+SYSTEM = """คุณคือผู้จัดการกองทุนที่ลงทุนระยะกลาง (ถือเป็นสัปดาห์ถึงเดือน) ในหุ้น/ETF สหรัฐจากรายชื่อที่กำหนดเท่านั้น (หุ้นคือ 30 ตัวที่โมเมนตัมสูงสุดใน S&P 500 + ที่ถืออยู่)
 เป้าหมาย: ผลตอบแทนที่ดีโดยขาดทุนหนักสุด (drawdown) ต่ำ ไม่ใช่ผลตอบแทนสูงสุด
 ข้อมูลที่ให้คือทั้งหมดที่คุณรู้ ห้ามใช้ความรู้เรื่องราคาหรือเหตุการณ์ในอนาคต
 กติกา:
@@ -32,11 +32,16 @@ SYSTEM = """คุณคือผู้จัดการกองทุนท�
 
 def propose(close, ind, date, regime, p=None, held=(), extra=None):
     px, sma, mom, vol = (x.loc[date] for x in (close, ind["sma"], ind["mom"], ind["vol"]))
+    from agents import regime_agent
+    # S&P 500 มี 500 ตัว ส่งให้ Claude แค่ ETF/ป้องกันทั้งหมด + ที่ถืออยู่ + หุ้นโมเมนตัมสูงสุด 30 ตัว (ตัวเดียวกับที่อ่านข่าว)
+    shortlist = set(regime_agent.top_stocks(close, ind, date, 30)) | set(held)
     table = []
     for t, m in config.UNIVERSE.items():
+        if m["kind"] == "stock" and t not in shortlist:
+            continue
         if t not in close.columns or not all(v == v for v in (px[t], sma[t], mom[t], vol[t])):
             continue
-        table.append({"ticker": t, "kind": m["kind"], "group": m["group"],
+        table.append({"ticker": t, "name": m.get("name", ""), "kind": m["kind"], "group": m["group"],
                       "mom_6_12m": round(float(mom[t]), 3), "vol_3m": round(float(vol[t]), 3),
                       "vs_sma200": round(float(px[t] / sma[t] - 1), 3), "held": t in held})
     ranked = sorted((r for r in table if r["kind"] in ("etf", "stock")), key=lambda r: -r["mom_6_12m"])
@@ -60,7 +65,7 @@ def propose(close, ind, date, regime, p=None, held=(), extra=None):
             v = float(v)
         except (TypeError, ValueError):
             continue
-        if t in config.UNIVERSE and t in close.columns and v > 0:
+        if t in config.UNIVERSE and t in close.columns and v > 0 and (config.UNIVERSE[t]["kind"] != "stock" or t in shortlist):
             w[t] = v
     tot = sum(w.values())
     if not w or tot <= 0:

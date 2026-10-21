@@ -14,6 +14,7 @@
 """
 import json
 import os
+import time
 import urllib.request
 from datetime import date as _date, datetime, timedelta, timezone
 
@@ -49,17 +50,17 @@ def _get(url):
 
 
 def _finnhub_news(t, key, start, end):
-    rows = _get(f"https://finnhub.io/api/v1/company-news?symbol={t}&from={start}&to={end}&token={key}") or []
+    rows = _get(f"https://finnhub.io/api/v1/company-news?symbol={t.replace('-', '.')}&from={start}&to={end}&token={key}") or []
     seen, out = set(), []
     for r in sorted(rows, key=lambda r: -(r.get("datetime") or 0)):
         h = (r.get("headline") or "").strip()
         if not h or h.lower() in seen:
             continue
         seen.add(h.lower())
-        out.append({"title": h[:200], "summary": (r.get("summary") or "")[:350], "source": r.get("source") or "",
+        out.append({"title": h[:200], "summary": (r.get("summary") or "")[:260], "source": r.get("source") or "",
                     "url": r.get("url") or "",
                     "date": datetime.fromtimestamp(r.get("datetime") or 0, timezone.utc).strftime("%Y-%m-%d")})
-        if len(out) >= 10:
+        if len(out) >= 8:
             break
     return out
 
@@ -86,6 +87,7 @@ def fetch(tickers, today=None):
         items = []
         if key:
             try:
+                time.sleep(1.1)   # Finnhub ฟรี: 60 ครั้ง/นาที
                 items = _finnhub_news(t, key, start, end)
             except Exception as e:
                 print("Finnhub ข่าว", t, e)
@@ -100,8 +102,9 @@ def fetch(tickers, today=None):
         try:
             cal = _get(f"https://finnhub.io/api/v1/calendar/earnings?from={end}&to={today + timedelta(days=14)}&token={key}")
             for e in cal.get("earningsCalendar", []):
-                if e.get("symbol") in tickers and e.get("date"):
-                    earn.setdefault(e["symbol"], e["date"])
+                sym = config.yf_symbol(e.get("symbol") or "")
+                if sym in tickers and e.get("date"):
+                    earn.setdefault(sym, e["date"])
         except Exception as e:
             print("Finnhub ปฏิทินงบ", e)
     return news, earn, src
@@ -126,7 +129,7 @@ def stocks():
 
 def digest(tickers=None, news=None, earnings=None, today=None):
     """สรุปข่าวทุกหุ้น คืน {"enabled","date","source","stocks":{t:{flag,reason,items,earnings,news}}}"""
-    tickers = tickers or stocks()
+    tickers = tickers or stocks()[:40]   # ปกติ orchestrator ส่งรายชื่อที่ถือ + โมเมนตัมสูงสุดมาให้
     today = today or _date.today()
     base = {"date": str(today), "stocks": {}}
     if not llm.enabled():

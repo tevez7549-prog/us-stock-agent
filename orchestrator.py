@@ -20,6 +20,7 @@ from agents import data_agent, regime_agent, news_agent, macro_agent, risk_agent
 from strategies import PORTFOLIOS
 
 RISKY = ("etf", "stock")
+NEWS_TOP = 30   # อ่านข่าวหุ้นโมเมนตัมสูงสุดกี่ตัว (นอกจากตัวที่ถืออยู่)
 
 
 # ---------------------------------------------------------------- เทรดออเดอร์ที่อนุมัติ (จำลองการกดใน Dime)
@@ -96,7 +97,7 @@ def _daily_one(d):
             if not paper.get("paused"):
                 _fill_orders(c, day, open_.loc[day], close.iloc[i - 1] if i > 0 else close.loc[day])
             pos, cash = paper.positions(), paper.get("cash")
-            px = close.loc[day]
+            px = close.loc[:day].ffill().iloc[-1]   # ตัวที่ไม่มีราคาวันนี้ ใช้ราคาล่าสุดที่มี
             usd = cash + sum(p["shares"] * (px[t] if px[t] == px[t] else 0) for t, p in pos.items())
             bench = paper.get("capital") * (1 - config.COSTS["fx_spread_pct"]) * px[config.BENCHMARK] / paper.get("bench_start")
             c.execute("INSERT OR REPLACE INTO equity (portfolio, date, usd, thb, bench_usd) VALUES (?,?,?,?,?)",
@@ -119,17 +120,36 @@ def daily(d):
     paper.put("fx", round(float(fx.iloc[-1]), 4), shared=True)
     paper.put("last_data", str(close.index[-1].date()), shared=True)
     paper.put("data_source", d.get("source"), shared=True)
-    return news_today()
+    uni = {t: m["kind"] for t, m in config.UNIVERSE.items()}
+    if paper.get("universe", shared=True) != uni:
+        paper.put("universe", uni, shared=True)
+        paper.put("names", {t: m.get("name", "") for t, m in config.UNIVERSE.items() if m["kind"] == "stock"}, shared=True)
+    return news_today(d)
 
 
-def news_today():
-    """อ่านข่าวหุ้นทุกตัววันละครั้ง (Claude 1 ครั้ง) เก็บไว้ให้เว็บ + รอบรายสัปดาห์ใช้ร่วมกัน"""
+def held_everywhere():
+    """ทุก ticker ที่พอร์ตไหนก็ตามถืออยู่"""
+    with paper.conn() as c:
+        return sorted({r["ticker"] for r in c.execute("SELECT DISTINCT ticker FROM positions WHERE shares > 1e-9")})
+
+
+def watchlist(close, ind=None, n=NEWS_TOP):
+    """หุ้นที่ต้องอ่านข่าว: ที่ถืออยู่ทุกพอร์ต + หุ้นโมเมนตัมสูงสุด n ตัว (ตัวที่มีโอกาสถูกเลือก)
+    อ่านทั้ง 500 ตัวทุกวันเปลืองเกินไปและข่าวส่วนใหญ่ไม่เกี่ยวกับการตัดสินใจ"""
+    ind = ind or regime_agent.indicators(close)
+    date = close.index[-1]
+    held = [t for t in held_everywhere() if config.info(t)["kind"] == "stock"]
+    return list(dict.fromkeys(held + regime_agent.top_stocks(close, ind, date, n)))
+
+
+def news_today(d=None, ind=None):
+    """อ่านข่าววันละครั้ง (Claude 1 ครั้ง) เก็บไว้ให้เว็บ + รอบรายสัปดาห์ใช้ร่วมกัน"""
     old = paper.get("news_digest", shared=True) or {}
     today = str(datetime.now(timezone.utc).date())
     if old.get("date") == today and old.get("enabled") and not old.get("error"):
         return old
     try:
-        dig = news_agent.digest()
+        dig = news_agent.digest(watchlist(d["close"], ind) if d is not None else None)
     except Exception as e:
         dig = {"enabled": True, "date": today, "stocks": {}, "error": f"News Agent ล้มเหลว: {str(e)[:150]}"}
     if dig.get("enabled"):
@@ -153,7 +173,7 @@ def _shared_context(d, date, as_of):
     quality = data_agent.quality_report(d, as_of or datetime.now())
     ind = regime_agent.indicators(close)
     macro = macro_agent.assess(close, d["fx"], date)
-    return {"quality": quality, "ind": ind, "macro": macro, "news": news_today()}
+    return {"quality": quality, "ind": ind, "macro": macro, "news": news_today(d, ind)}
 
 
 def _weekly_one(d, ctx, as_of):
@@ -184,10 +204,10 @@ def _weekly_one(d, ctx, as_of):
         reg["reasons"].append(f"มหภาคเสี่ยงสูง ({macro.get('note', '')[:60]}) ลดของเสี่ยงอีก {1 - macro['factor']:.0%}")
 
     pos, cash = paper.positions(), paper.get("cash")
-    px = close.loc[date]
+    px = close.ffill().loc[date]
     vals = {t: p["shares"] * px[t] for t, p in pos.items()}
     equity = cash + sum(vals.values())
-    held_risky = [t for t in pos if config.UNIVERSE[t]["kind"] in RISKY]
+    held_risky = [t for t in pos if config.info(t)["kind"] in RISKY]
 
     # กลยุทธ์เสนอ → ข่าวกรอง → Risk Manager บังคับกฎ
     dig = ctx.get("news")
@@ -196,7 +216,7 @@ def _weekly_one(d, ctx, as_of):
                                       extra={"news": news_agent.for_ai(dig), "macro": macro.get("note")})
     else:                 # กลยุทธ์กฎ: ข่าวไม่มีผลกับการเลือก มีแค่ธง block ที่ตัดออก
         prop = meta["module"].propose(close, ind, date, reg, held=held_risky)
-    news = news_agent.screen([t for t in prop["weights"] if config.UNIVERSE[t]["kind"] in RISKY], dig)
+    news = news_agent.screen([t for t in prop["weights"] if config.info(t)["kind"] in RISKY], dig)
     with paper.conn() as c:
         peak = c.execute("SELECT MAX(usd) m FROM equity WHERE portfolio=?", (P,)).fetchone()["m"] or equity
     dd = max(0.0, 1 - equity / peak)
@@ -323,10 +343,28 @@ def publish_backtest(d):
     return out
 
 
+def refresh_universe():
+    """อัปเดตรายชื่อ S&P 500 ล่าสุด (บนคลาวด์) ดึงไม่ได้ = ใช้ไฟล์ในโปรแกรม (universe/sp500.csv)"""
+    import urllib.request
+    src, n = "file", sum(1 for m in config.UNIVERSE.values() if m["kind"] == "stock")
+    if paper.remote():
+        try:
+            with urllib.request.urlopen(urllib.request.Request(config.SP500_URL, headers={"user-agent": "us-stock-agent/1"}), timeout=30) as r:
+                rows = config.read_sp500(r.read().decode("utf-8"))
+            if len(rows) >= 450:
+                config.set_stocks(rows)
+                src, n = "online", len(rows)
+        except Exception as e:
+            print("อัปเดตรายชื่อ S&P 500 ไม่ได้ ใช้ไฟล์เดิม:", e)
+    paper.put("universe_info", {"source": src, "stocks": n, "date": paper.now_th()[:10]}, shared=True)
+
+
 def load_data(source="auto"):
     if paper.remote() and source in ("auto", "synthetic"):
         source = "yfinance"   # บนคลาวด์ใช้ข้อมูลจริงเท่านั้น
-    d, src = data_agent.load(source, allow_synthetic=not paper.remote())
+    refresh_universe()
+    extra = [t for t in held_everywhere() if t not in config.UNIVERSE]   # หลุดจาก S&P 500 แต่ยังถือ → ต้องมีราคาไว้ขาย
+    d, src = data_agent.load(source, allow_synthetic=not paper.remote(), extra=extra)
     d["source"] = src
     paper.log("data", f"โหลดข้อมูลจาก {src}", {"last": str(d["close"].index[-1].date())}, shared=True)
     return d
