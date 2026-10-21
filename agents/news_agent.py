@@ -152,7 +152,7 @@ def digest(tickers=None, news=None, earnings=None, today=None):
     if not idx:
         return {**base, "enabled": True, "note": "ดึงข่าวไม่ได้"}
 
-    data = llm.ask_json("news", SYSTEM, "ข่าวแยกตาม ticker:\n" + json.dumps(numbered, ensure_ascii=False), 3000)
+    data = llm.ask_json("news", SYSTEM, "ข่าวแยกตาม ticker:\n" + json.dumps(numbered, ensure_ascii=False), 6000)
     if not data:
         return {**base, "enabled": True, "error": "News Agent ล้มเหลว (ใช้ค่า: ไม่มีธง)"}
     got = {s.get("ticker"): s for s in data.get("stocks", []) if isinstance(s, dict)}

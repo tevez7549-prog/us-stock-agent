@@ -3,5 +3,5 @@ numpy
 yfinance
 fastapi
 uvicorn
-anthropic
+anthropic>=1.17,<2
 python-dotenv

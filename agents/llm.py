@@ -58,7 +58,7 @@ def ask_json(agent, system, user, max_tokens=1500):
         import anthropic
         client = anthropic.Anthropic(api_key=key)
         msg = client.messages.create(
-            model=config.CLAUDE_MODEL, max_tokens=max_tokens, temperature=0,
+            model=config.CLAUDE_MODEL, max_tokens=max_tokens,
             system=system + "\n\nตอบเป็น JSON อย่างเดียว ห้ามมีข้อความอื่นนอก JSON",
             messages=[{"role": "user", "content": user}])
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
