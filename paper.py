@@ -14,20 +14,41 @@ from datetime import datetime, timedelta, timezone
 
 import config
 
+# ทุกตารางที่เป็น "ของพอร์ต" มีคอลัมน์ portfolio (ชื่อกลยุทธ์) · state ที่ไม่ขึ้นกับพอร์ตใช้ portfolio=''
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE IF NOT EXISTS positions (ticker TEXT PRIMARY KEY, shares REAL, cost_usd REAL);
+CREATE TABLE IF NOT EXISTS state (portfolio TEXT NOT NULL DEFAULT '', key TEXT, value TEXT, PRIMARY KEY (portfolio, key));
+CREATE TABLE IF NOT EXISTS positions (portfolio TEXT NOT NULL DEFAULT '', ticker TEXT, shares REAL, cost_usd REAL, PRIMARY KEY (portfolio, ticker));
 CREATE TABLE IF NOT EXISTS packets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, signal_date TEXT UNIQUE, status TEXT,
-  data TEXT, audit TEXT, report TEXT);
+  id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio TEXT NOT NULL DEFAULT '', created TEXT, signal_date TEXT, status TEXT,
+  data TEXT, audit TEXT, report TEXT, UNIQUE (portfolio, signal_date));
 CREATE TABLE IF NOT EXISTS orders (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, packet_id INTEGER, ticker TEXT, side TEXT, usd REAL,
+  id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio TEXT NOT NULL DEFAULT '', packet_id INTEGER, ticker TEXT, side TEXT, usd REAL,
   ref_price REAL, w_from REAL, w_to REAL, reason TEXT, status TEXT, decided_at TEXT,
   fill_date TEXT, fill_price REAL, shares REAL, fee REAL, realized_usd REAL, note TEXT);
-CREATE TABLE IF NOT EXISTS equity (date TEXT PRIMARY KEY, usd REAL, thb REAL, bench_usd REAL);
-CREATE TABLE IF NOT EXISTS journal (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, agent TEXT, event TEXT, detail TEXT);
-CREATE TABLE IF NOT EXISTS backtests (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, source TEXT, data TEXT);
+CREATE TABLE IF NOT EXISTS equity (portfolio TEXT NOT NULL DEFAULT '', date TEXT, usd REAL, thb REAL, bench_usd REAL, PRIMARY KEY (portfolio, date));
+CREATE TABLE IF NOT EXISTS journal (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio TEXT NOT NULL DEFAULT '', time TEXT, agent TEXT, event TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS backtests (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio TEXT NOT NULL DEFAULT '', created TEXT, source TEXT, data TEXT);
 """
+
+# พอร์ตที่กำลังทำงาน — orchestrator ตั้งค่าก่อนเรียกฟังก์ชันใดๆ ของพอร์ตนั้น
+CURRENT = ""
+
+
+class portfolio:
+    """with paper.portfolio("momentum"): ... → ทุก get/put/positions/log ในบล็อกนี้เป็นของพอร์ตนั้น"""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        global CURRENT
+        self.prev, CURRENT = CURRENT, self.name
+        return self
+
+    def __exit__(self, *a):
+        global CURRENT
+        CURRENT = self.prev
+        return False
 
 TH = timezone(timedelta(hours=7))
 
@@ -137,35 +158,39 @@ def conn():
     return _CONN
 
 
-def get(key, default=None):
-    r = conn().execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
+def get(key, default=None, shared=False):
+    r = conn().execute("SELECT value FROM state WHERE portfolio=? AND key=?", ("" if shared else CURRENT, key)).fetchone()
     return json.loads(r["value"]) if r else default
 
 
-def put(key, value):
+def put(key, value, shared=False):
     with conn() as c:
-        c.execute("INSERT OR REPLACE INTO state VALUES (?,?)", (key, json.dumps(value, default=float)))
+        c.execute("INSERT OR REPLACE INTO state (portfolio, key, value) VALUES (?,?,?)",
+                  ("" if shared else CURRENT, key, json.dumps(value, default=float)))
 
 
-def log(agent, event, detail=None, time=None):
+def log(agent, event, detail=None, time=None, shared=False):
     with conn() as c:
-        c.execute("INSERT INTO journal (time, agent, event, detail) VALUES (?,?,?,?)",
-                  (time or now_th(), agent, event,
+        c.execute("INSERT INTO journal (portfolio, time, agent, event, detail) VALUES (?,?,?,?,?)",
+                  ("" if shared else CURRENT, time or now_th(), agent, event,
                    json.dumps(detail, ensure_ascii=False, default=str) if detail is not None else None))
 
 
 def positions():
     return {r["ticker"]: {"shares": r["shares"], "cost_usd": r["cost_usd"]}
-            for r in conn().execute("SELECT * FROM positions WHERE shares > 1e-9")}
+            for r in conn().execute("SELECT * FROM positions WHERE portfolio=? AND shares > 1e-9", (CURRENT,))}
 
 
 def init(capital=config.START_CAPITAL_USD):
+    """เริ่มพอร์ตปัจจุบันถ้ายังไม่มี"""
+    assert CURRENT, "ต้องอยู่ใน with paper.portfolio(...)"
     if get("cash") is None:
         put("cash", capital * (1 - config.COSTS["fx_spread_pct"]))
         put("capital", capital)
         put("paused", False)
-        put("universe", {t: m["kind"] for t, m in config.UNIVERSE.items()})
         log("system", "เริ่มพอร์ตจำลอง", {"capital_usd": capital})
+    if get("universe", shared=True) is None:
+        put("universe", {t: m["kind"] for t, m in config.UNIVERSE.items()}, shared=True)
 
 
 def reset():

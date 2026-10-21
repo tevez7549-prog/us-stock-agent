@@ -1,22 +1,18 @@
-"""เอเจนต์ 5 — ข่าวบริษัท (Claude) — ปิดไว้ก่อนจนถึงเฟส 3
-มีสิทธิ์แค่ "ตัดออก" เท่านั้น (คืนรายชื่อ ticker ที่ห้ามซื้อเพิ่ม) เพิ่มความเสี่ยงไม่ได้
-
-ตอนเปิดใช้: ดึงหัวข่าวล่าสุดจาก yfinance → ส่งให้ Claude ตอบเป็น JSON ตาม schema
-ถ้าเรียกไม่สำเร็จ / ตอบผิดรูปแบบ → ถือว่า "ไม่มีธง" แต่บันทึกว่าเอเจนต์ล้มเหลว (ไม่เดาเอง)
+"""เอเจนต์ 5 — ข่าวบริษัท (Claude)
+มีสิทธิ์แค่ "ตัดออก" เท่านั้น: คืนรายชื่อ ticker ที่ห้ามซื้อเพิ่ม เพิ่มความเสี่ยงไม่ได้
+ดึงหัวข่าวล่าสุดจาก yfinance → Claude ติดธง → ถ้าเรียกไม่สำเร็จ ถือว่า "ไม่มีธง" แต่บันทึกว่าล้มเหลว (ไม่เดาเอง)
 """
 import json
-import os
 
 import config
+from agents import llm
 
-PROMPT = """คุณคือนักวิเคราะห์ข่าวที่ทำหน้าที่ "กรองความเสี่ยง" เท่านั้น
-ด้านล่างคือหัวข่าวล่าสุดของสินทรัพย์ที่ระบบกำลังจะซื้อ ให้ติดธง "block" เฉพาะเมื่อมีข่าวร้ายร้ายแรงและเฉพาะเจาะจง
-(เช่น ถูกสอบสวนฉ้อโกง, ผู้บริหารลาออกกะทันหัน, ลดคาดการณ์รายได้หนัก, คดีใหญ่, สินค้าหลักถูกแบน)
-ข่าวทั่วไปหรือข่าวตลาดโดยรวม = "ok"
-ตอบเป็น JSON อย่างเดียว: {"flags": [{"ticker": "...", "flag": "ok"|"block", "reason": "สั้นๆ ภาษาไทย"}]}
-
-ข่าว:
-"""
+SYSTEM = """คุณคือนักวิเคราะห์ข่าวที่ทำหน้าที่ "กรองความเสี่ยง" เท่านั้น ไม่ใช่เลือกหุ้น
+ติดธง "block" เฉพาะเมื่อมีข่าวร้ายร้ายแรงและเฉพาะเจาะจงกับบริษัทนั้นใน 7 วันล่าสุด เช่น
+ถูกสอบสวนฉ้อโกง, ผู้บริหารลาออกกะทันหัน, ลดคาดการณ์รายได้หนัก, คดีใหญ่, สินค้าหลักถูกแบน, ผิดนัดชำระหนี้
+ติดธง "caution" เมื่อจะประกาศงบภายใน 5 วันทำการ หรือมีข่าวลบแต่ไม่ร้ายแรง
+ข่าวทั่วไป / ข่าวตลาดโดยรวม / ราคาขึ้นลง = "ok"
+รูปแบบ: {"flags":[{"ticker":"AAPL","flag":"ok|caution|block","reason":"สั้นๆ ภาษาไทย"}]}"""
 
 
 def _headlines(tickers):
@@ -25,27 +21,25 @@ def _headlines(tickers):
     for t in tickers:
         try:
             items = yf.Ticker(t).news or []
-            out[t] = [(i.get("content") or i).get("title", "") for i in items[:8]]
+            out[t] = [((i.get("content") or i).get("title") or "")[:160] for i in items[:8]]
         except Exception:
             out[t] = []
     return out
 
 
-def screen(tickers):
-    if not config.USE_CLAUDE or not os.environ.get("ANTHROPIC_API_KEY"):
-        return {"enabled": False, "blocked": [], "flags": [], "note": "ยังไม่เปิดใช้ (เฟส 3)"}
-    try:
-        import anthropic
-        heads = _headlines([t for t in tickers if config.UNIVERSE[t]["kind"] == "stock"])
-        if not any(heads.values()):
-            return {"enabled": True, "blocked": [], "flags": [], "note": "ไม่มีข่าวให้อ่าน"}
-        msg = anthropic.Anthropic().messages.create(
-            model=config.CLAUDE_MODEL, max_tokens=1500,
-            messages=[{"role": "user", "content": PROMPT + json.dumps(heads, ensure_ascii=False)}])
-        text = msg.content[0].text
-        data = json.loads(text[text.find("{"): text.rfind("}") + 1])
-        flags = [f for f in data.get("flags", []) if f.get("ticker") in tickers]
-        return {"enabled": True, "flags": flags,
-                "blocked": [f["ticker"] for f in flags if f.get("flag") == "block"]}
-    except Exception as e:
-        return {"enabled": True, "blocked": [], "flags": [], "error": f"News Agent ล้มเหลว: {e}"}
+def screen(tickers, headlines=None):
+    stocks = [t for t in tickers if config.UNIVERSE.get(t, {}).get("kind") == "stock"]
+    if not llm.enabled():
+        return {"enabled": False, "blocked": [], "caution": [], "flags": [], "note": "ยังไม่ได้ใส่ Anthropic API key"}
+    if not stocks:
+        return {"enabled": True, "blocked": [], "caution": [], "flags": [], "note": "ไม่มีหุ้นรายตัวให้ตรวจ"}
+    heads = headlines if headlines is not None else _headlines(stocks)
+    if not any(heads.values()):
+        return {"enabled": True, "blocked": [], "caution": [], "flags": [], "note": "ดึงหัวข่าวไม่ได้"}
+    data = llm.ask_json("news", SYSTEM, "หัวข่าวล่าสุดแยกตาม ticker:\n" + json.dumps(heads, ensure_ascii=False))
+    if not data:
+        return {"enabled": True, "blocked": [], "caution": [], "flags": [], "error": "News Agent ล้มเหลว (ใช้ค่า: ไม่มีธง)"}
+    flags = [f for f in data.get("flags", []) if f.get("ticker") in stocks]
+    return {"enabled": True, "flags": flags,
+            "blocked": [f["ticker"] for f in flags if f.get("flag") == "block"],
+            "caution": [f["ticker"] for f in flags if f.get("flag") == "caution"]}

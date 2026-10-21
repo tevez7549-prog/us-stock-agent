@@ -33,6 +33,26 @@ const sha256 = async s => b64(await crypto.subtle.digest('SHA-256', enc.encode(s
 const rand = () => b64(crypto.getRandomValues(new Uint8Array(24)));
 const nowIso = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 19); // เวลาไทย
 
+// ---------- encryption at rest (AES-GCM, key derived from the session secret stored in docs) ----------
+async function aesKey(env) {
+  const a = await authDoc(env);
+  const raw = await crypto.subtle.digest('SHA-256', enc.encode('aes:' + (env.SESSION_SECRET || a.sessionKey)));
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+async function encrypt(env, plain) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  return b64(iv) + '.' + b64(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await aesKey(env), enc.encode(plain)));
+}
+async function decrypt(env, blob) {
+  const [iv, ct] = blob.split('.');
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) }, await aesKey(env), unb64(ct)));
+}
+async function getSecret(env, name) {
+  const d = await getDoc(env, 'secrets', name);
+  if (!d || !d.enc) return null;
+  try { return await decrypt(env, d.enc); } catch (e) { return null; }
+}
+
 // ---------- docs (secrets) ----------
 async function getDoc(env, coll, id) {
   const row = await env.DB.prepare('SELECT data FROM docs WHERE coll=? AND id=?').bind(coll, id).first();
@@ -96,8 +116,9 @@ async function changePassword(req, env) {
 
 // ---------- agent auth ----------
 let JWKS = { at: 0, keys: [] };
-async function jwks(iss, force = false) {
-  if (Date.now() - JWKS.at < (force ? 60e3 : 3600e3) && JWKS.iss === iss) return JWKS.keys;
+async function jwks(iss, force = false, env = {}) {
+  const ttl = env.JWKS_TTL_MS ? Number(env.JWKS_TTL_MS) : (force ? 60e3 : 3600e3);   // JWKS_TTL_MS ใช้เฉพาะตอนทดสอบบนเครื่อง
+  if (Date.now() - JWKS.at < ttl && JWKS.iss === iss) return JWKS.keys;
   const r = await fetch(iss + '/.well-known/jwks');
   if (!r.ok) throw new Error('jwks ' + r.status);
   JWKS = { at: Date.now(), iss, keys: (await r.json()).keys || [] };
@@ -114,8 +135,8 @@ async function verifyOidc(token, env) {
   if (header.alg !== 'RS256' || p.iss !== iss || p.aud !== (env.OIDC_AUDIENCE || 'us-stock-agent')) return false;
   if (p.repository !== env.AGENT_REPO || p.ref !== 'refs/heads/main') return false;
   if (!(p.exp > now) || (p.nbf && p.nbf > now + 60)) return false;
-  let jwk = (await jwks(iss)).find(k => k.kid === header.kid);
-  if (!jwk) jwk = (await jwks(iss, true)).find(k => k.kid === header.kid);   // GitHub หมุนคีย์ใหม่
+  let jwk = (await jwks(iss, false, env)).find(k => k.kid === header.kid);
+  if (!jwk) jwk = (await jwks(iss, true, env)).find(k => k.kid === header.kid);   // GitHub หมุนคีย์ใหม่
   if (!jwk) return false;
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
   return crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, unb64(parts[2]), enc.encode(parts[0] + '.' + parts[1]));
@@ -135,31 +156,44 @@ async function agentAuthed(req, env) {
 const all = async (env, sql, ...args) => (await env.DB.prepare(sql).bind(...args).all()).results;
 const first = (env, sql, ...args) => env.DB.prepare(sql).bind(...args).first();
 async function getState(env, key, dflt = null) {
-  const r = await first(env, 'SELECT value FROM state WHERE key=?', key);
+  const r = await first(env, "SELECT value FROM state WHERE portfolio='' AND key=?", key);
   return r ? JSON.parse(r.value) : dflt;
 }
-const putState = (env, key, value) => env.DB.prepare('INSERT OR REPLACE INTO state VALUES (?,?)').bind(key, JSON.stringify(value));
+const putState = (env, key, value) => env.DB.prepare("INSERT OR REPLACE INTO state (portfolio, key, value) VALUES ('',?,?)").bind(key, JSON.stringify(value));
 const logStmt = (env, agent, event, detail) =>
-  env.DB.prepare('INSERT INTO journal (time, agent, event, detail) VALUES (?,?,?,?)').bind(nowIso(), agent, event, detail == null ? null : JSON.stringify(detail));
+  env.DB.prepare("INSERT INTO journal (portfolio, time, agent, event, detail) VALUES ('',?,?,?,?)").bind(nowIso(), agent, event, detail == null ? null : JSON.stringify(detail));
 async function finnhubKey(env) {
   if (env.FINNHUB_KEY) return env.FINNHUB_KEY;
   const s = await getDoc(env, 'secrets', 'finnhub');
-  return s && s.key;
+  if (!s) return null;
+  if (s.key) { await putDoc(env, 'secrets', 'finnhub', { enc: await encrypt(env, s.key) }); return s.key; } // ย้ายของเก่าเป็นแบบเข้ารหัส
+  return getSecret(env, 'finnhub');
 }
+const PORTFOLIOS = ['momentum', 'dual_momentum', 'risk_parity', 'ai_pick'];
 
 // ---------- API: อ่าน ----------
 async function status(env) {
-  const keys = ['cash', 'capital', 'paused', 'prev_regime', 'last_marked', 'last_prices', 'fx', 'last_data', 'data_source', 'universe'];
-  const rows = await all(env, `SELECT key, value FROM state WHERE key IN (${keys.map(() => '?').join(',')})`, ...keys);
-  const s = Object.fromEntries(rows.map(r => [r.key, JSON.parse(r.value)]));
-  const positions = await all(env, 'SELECT ticker, shares, cost_usd FROM positions WHERE shares > 1e-9');
-  const equity = await all(env, 'SELECT date, usd, thb, bench_usd FROM equity ORDER BY date');
-  const lastPacket = await first(env, 'SELECT id, signal_date, status FROM packets ORDER BY id DESC LIMIT 1');
-  const counts = await first(env, "SELECT SUM(status IN ('proposed','held')) pending, SUM(status='approved') approved FROM orders");
+  const rows = await all(env, "SELECT portfolio, key, value FROM state");
+  const shared = {}, per = {};
+  for (const r of rows) {
+    const v = JSON.parse(r.value);
+    if (r.portfolio === '') shared[r.key] = v; else (per[r.portfolio] = per[r.portfolio] || {})[r.key] = v;
+  }
+  const positions = await all(env, 'SELECT portfolio, ticker, shares, cost_usd FROM positions WHERE shares > 1e-9');
+  const equity = await all(env, 'SELECT portfolio, date, usd, thb, bench_usd FROM equity ORDER BY date');
+  const counts = await all(env, "SELECT portfolio, SUM(status IN ('proposed','held')) pending, SUM(status='approved') approved FROM orders GROUP BY portfolio");
+  const lastPk = await all(env, "SELECT portfolio, id, signal_date, status FROM packets WHERE id IN (SELECT MAX(id) FROM packets GROUP BY portfolio)");
   const lastRun = await first(env, "SELECT time, event FROM journal WHERE agent IN ('orchestrator','data') ORDER BY id DESC LIMIT 1");
-  return { ...s, positions, equity, last_packet: lastPacket, last_run: lastRun, pending: counts?.pending || 0, approved: counts?.approved || 0,
+  const portfolios = {};
+  for (const p of PORTFOLIOS) {
+    const c = counts.find(x => x.portfolio === p) || {};
+    portfolios[p] = { ...(per[p] || {}), positions: positions.filter(x => x.portfolio === p), equity: equity.filter(x => x.portfolio === p),
+                      pending: c.pending || 0, approved: c.approved || 0, last_packet: lastPk.find(x => x.portfolio === p) || null };
+  }
+  const pending = counts.reduce((a, c) => a + (c.pending || 0), 0);
+  return { ...shared, portfolios, pending, last_run: lastRun,
            can_run: Boolean(env.GH_TOKEN && env.AGENT_REPO), live_quotes: Boolean(await finnhubKey(env)),
-           password_env: Boolean(env.APP_PASSWORD) };
+           ai_enabled: Boolean(await getSecret(env, 'anthropic')), password_env: Boolean(env.APP_PASSWORD) };
 }
 async function packet(env, id) {
   const p = await first(env, 'SELECT * FROM packets WHERE id=?', id);
@@ -175,7 +209,8 @@ async function decide(req, env) {
   const ids = Array.isArray(body.ids) ? body.ids.filter(Number.isInteger).slice(0, 100) : [];
   const decision = body.decision;
   if (!ids.length || !['approve', 'reject'].includes(decision)) return json({ error: 'bad body' }, 400);
-  if (await getState(env, 'paused', false)) return json({ error: "ระบบอยู่ในโหมดพัก กด 'ทำงานต่อ' ก่อน" }, 400);
+  const paused = await first(env, "SELECT COUNT(*) n FROM state WHERE key='paused' AND value='true'");
+  if (paused.n) return json({ error: "ระบบอยู่ในโหมดพัก กด 'ทำงานต่อ' ก่อน" }, 400);
   const blocked = await first(env, `SELECT COUNT(*) n FROM orders o JOIN packets p ON p.id=o.packet_id WHERE o.id IN (${ids.map(() => '?').join(',')}) AND p.status='blocked'`, ...ids);
   if (blocked.n) return json({ error: 'แพ็กเกจนี้ไม่ผ่านผู้ตรวจสอบ อนุมัติไม่ได้' }, 400);
   const st = decision === 'approve' ? 'approved' : 'rejected';
@@ -190,15 +225,17 @@ async function decide(req, env) {
 }
 async function kill(env) {
   const res = await env.DB.batch([
-    putState(env, 'paused', true),
+    ...PORTFOLIOS.map(p => env.DB.prepare('INSERT OR REPLACE INTO state (portfolio, key, value) VALUES (?,?,?)').bind(p, 'paused', 'true')),
     env.DB.prepare("UPDATE orders SET status='cancelled', note='Kill switch' WHERE status IN ('approved','proposed','held')"),
     env.DB.prepare("UPDATE packets SET status='cancelled' WHERE status='awaiting'"),
   ]);
-  await logStmt(env, 'owner', 'Kill switch: หยุดระบบ (เว็บ)', { cancelled_orders: res[1].meta.changes }).run();
-  return json({ cancelled: res[1].meta.changes });
+  const n = res[PORTFOLIOS.length].meta.changes;
+  await logStmt(env, 'owner', 'Kill switch: หยุดระบบ (เว็บ)', { cancelled_orders: n }).run();
+  return json({ cancelled: n });
 }
 async function resume(env) {
-  await env.DB.batch([putState(env, 'paused', false), logStmt(env, 'owner', 'กลับมาทำงานต่อ (เว็บ)')]);
+  await env.DB.batch([...PORTFOLIOS.map(p => env.DB.prepare('INSERT OR REPLACE INTO state (portfolio, key, value) VALUES (?,?,?)').bind(p, 'paused', 'false')),
+                      logStmt(env, 'owner', 'กลับมาทำงานต่อ (เว็บ)')]);
   return json({ ok: true });
 }
 async function saveSettings(req, env) {
@@ -206,8 +243,14 @@ async function saveSettings(req, env) {
   if (typeof body.finnhub_key === 'string') {
     const k = body.finnhub_key.trim();
     if (k && !/^[A-Za-z0-9]{10,64}$/.test(k)) return json({ error: 'รูปแบบ Finnhub key ไม่ถูกต้อง' }, 400);
-    await putDoc(env, 'secrets', 'finnhub', { key: k });
+    await putDoc(env, 'secrets', 'finnhub', k ? { enc: await encrypt(env, k) } : {});
     await logStmt(env, 'owner', k ? 'ตั้ง Finnhub key (เว็บ)' : 'ลบ Finnhub key (เว็บ)').run();
+  }
+  if (typeof body.anthropic_key === 'string') {
+    const k = body.anthropic_key.trim();
+    if (k && !/^sk-ant-[A-Za-z0-9_\-]{20,200}$/.test(k)) return json({ error: 'รูปแบบ Anthropic key ไม่ถูกต้อง (ขึ้นต้น sk-ant-)' }, 400);
+    await putDoc(env, 'secrets', 'anthropic', k ? { enc: await encrypt(env, k) } : {});
+    await logStmt(env, 'owner', k ? 'ตั้ง Anthropic key (เว็บ) — เปิดเอเจนต์ AI' : 'ลบ Anthropic key (เว็บ) — ปิดเอเจนต์ AI').run();
   }
   return json({ ok: true });
 }
@@ -262,12 +305,20 @@ async function agentSql(req, env) {
   return json(res.map(r => ({ results: r.results || [], changes: r.meta?.changes || 0, last_row_id: r.meta?.last_row_id || 0 })));
 }
 
+async function agentSecret(req, env, url) {
+  if (!(await agentAuthed(req, env))) return json({ error: 'unauthorized' }, 401);
+  const name = url.searchParams.get('name');
+  if (name !== 'anthropic') return json({ error: 'unknown secret' }, 400);   // ให้เอเจนต์อ่านได้เฉพาะ key ของ Claude
+  return json({ value: await getSecret(env, name) });
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
     try {
       if (p === '/agent/sql' && req.method === 'POST') return agentSql(req, env);
+      if (p === '/agent/secret' && req.method === 'GET') return agentSecret(req, env, url);
       if (!p.startsWith('/api/')) return env.ASSETS.fetch(req);
       if (p === '/api/login' && req.method === 'POST') return login(req, env);
       if (p === '/api/logout' && req.method === 'POST')
@@ -276,14 +327,14 @@ export default {
 
       if (req.method === 'GET') {
         if (p === '/api/status') return json(await status(env));
-        if (p === '/api/packets') return json(await all(env, 'SELECT id, created, signal_date, status FROM packets ORDER BY id DESC LIMIT 60'));
+        if (p === '/api/packets') return json(await all(env, 'SELECT id, portfolio, created, signal_date, status FROM packets ORDER BY id DESC LIMIT 120'));
         const m = p.match(/^\/api\/packets\/(\d+)$/);
         if (m) { const pk = await packet(env, Number(m[1])); return pk ? json(pk) : json({ error: 'ไม่พบแพ็กเกจ' }, 404); }
         if (p === '/api/backtest') {
-          const b = await first(env, 'SELECT id, created, source, data FROM backtests ORDER BY id DESC LIMIT 1');
-          return json(b ? { ...b, data: JSON.parse(b.data) } : null);
+          const rows = await all(env, 'SELECT portfolio, id, created, source, data FROM backtests WHERE id IN (SELECT MAX(id) FROM backtests GROUP BY portfolio)');
+          return json(Object.fromEntries(rows.map(b => [b.portfolio, { ...b, data: JSON.parse(b.data) }])));
         }
-        if (p === '/api/journal') return json(await all(env, 'SELECT * FROM journal ORDER BY id DESC LIMIT 300'));
+        if (p === '/api/journal') return json(await all(env, 'SELECT * FROM journal ORDER BY id DESC LIMIT 400'));
         if (p === '/api/quotes') return quotes(url, env, ctx);
       }
       if (req.method === 'POST') {

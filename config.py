@@ -86,8 +86,8 @@ COSTS = {
 APPROVAL_EXPIRE_DAYS = 3        # อนุมัติแล้วต้องเทรดภายใน 3 วันทำการ ไม่งั้นหมดอายุ
 MAX_PRICE_MOVE = 0.03           # ราคาขยับเกิน 3% จากตอนเสนอ = พักออเดอร์
 
-# ---------- เอเจนต์ AI (ปิดไว้ก่อน — เฟส 3) ----------
-USE_CLAUDE = False              # True + ตั้ง ANTHROPIC_API_KEY ใน .env
+# ---------- เอเจนต์ AI ----------
+# เปิดอัตโนมัติเมื่อมี Anthropic API key: ใส่ในหน้าตั้งค่าของเว็บ (เก็บใน D1) หรือ env ANTHROPIC_API_KEY
 CLAUDE_MODEL = "claude-sonnet-5-5"
 
 DATA_START = "2010-01-01"

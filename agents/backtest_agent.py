@@ -9,17 +9,21 @@ import numpy as np
 import pandas as pd
 
 import config
-from agents import regime_agent, signal_agent, risk_agent
+from agents import regime_agent, risk_agent
+from strategies import momentum
 
 
-def signal_dates(index, start_pos):
-    """วันทำการสุดท้ายของแต่ละสัปดาห์"""
+def signal_dates(index, start_pos, cadence="weekly"):
+    """วันทำการสุดท้ายของแต่ละสัปดาห์ (หรือเดือน)"""
     s = pd.Series(index, index=index)
-    last = s.groupby(index.to_period("W-FRI")).max()
-    return set(d for d in last if index.get_loc(d) >= start_pos and d != index[-1])
+    last = s.groupby(index.to_period("W-FRI")).max()          # วันทำการสุดท้ายของแต่ละสัปดาห์
+    last = [d for d in last if index.get_loc(d) >= start_pos and d != index[-1]]
+    if cadence == "monthly" and last:                          # เฉพาะสัปดาห์สุดท้ายของเดือน (กฎเดียวกับ orchestrator) + รอบแรก
+        last = [last[0]] + [d for d in last[1:] if (d + pd.Timedelta(days=7)).month != d.month]
+    return set(last)
 
 
-def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_USD):
+def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_USD, strategy_module=momentum, cadence="weekly"):
     p = {**config.STRATEGY, **(strategy or {})}
     r = {**config.RISK, **(risk or {})}
     c = {**config.COSTS, **(costs or {})}
@@ -29,7 +33,7 @@ def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_US
     C, O = close.to_numpy(), open_.to_numpy()
     ind = regime_agent.indicators(close, p)
     warm = max(p["mom_long"], p["trend_sma"]) + 1
-    sig_days = signal_dates(close.index, warm)
+    sig_days = signal_dates(close.index, warm, cadence)
 
     cash = capital * (1 - c["fx_spread_pct"])  # แลกบาทเป็นดอลลาร์ครั้งแรก
     sh = np.zeros(len(tickers))
@@ -84,7 +88,7 @@ def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_US
             reg = regime_agent.assess(close, ind, date, p, prev_up)
             prev_up = reg["spy_above_sma"]
             held = [tickers[j] for j in np.nonzero(sh > 1e-9)[0]]
-            prop = signal_agent.propose(close, ind, date, reg, p, held)
+            prop = strategy_module.propose(close, ind, date, reg, p, held)
             dd = 1 - equity / peak
             fin = risk_agent.apply(prop["weights"], drawdown=dd, r=r)
             pending = fin["weights"]

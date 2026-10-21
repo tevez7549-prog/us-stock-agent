@@ -1,11 +1,14 @@
-"""เอเจนต์ 1 — ผู้จัดการ: สั่งเอเจนต์ตามลำดับ ถ้าตัวไหนพังให้หยุดรอบนั้นและบันทึกไว้
+"""เอเจนต์ 1 — ผู้จัดการ: รันทุกพอร์ต (4 กลยุทธ์) ตามลำดับเอเจนต์ ถ้าพอร์ตไหนพังให้ข้ามพอร์ตนั้นและบันทึกไว้
 
 ใช้งาน:
-  python orchestrator.py daily     # ทุกเช้า: อัปเดตข้อมูล → เทรดออเดอร์ที่อนุมัติแล้ว → บันทึกมูลค่าพอร์ต
-  python orchestrator.py weekly    # วันเสาร์: daily + สร้างแพ็กเกจตัดสินใจ
-  python orchestrator.py simulate  # ทดสอบระบบทั้งวงจรย้อนหลัง 1 ปีด้วยการอนุมัติอัตโนมัติ (ล้างพอร์ตจำลองก่อน)
+  python orchestrator.py daily     # ทุกเช้า: อัปเดตข้อมูล → เทรดออเดอร์ที่อนุมัติแล้ว → บันทึกมูลค่าทุกพอร์ต
+  python orchestrator.py weekly    # วันเสาร์: daily + สร้างแพ็กเกจตัดสินใจของทุกพอร์ต (รายเดือนเฉพาะสัปดาห์สุดท้ายของเดือน)
+  python orchestrator.py backtest  # backtest 3 กลยุทธ์โค้ด + ความทนทาน
+  python orchestrator.py simulate  # ทดสอบทั้งวงจรย้อนหลัง 1 ปีด้วยการอนุมัติอัตโนมัติ (ล้างพอร์ตจำลองก่อน, เฉพาะบนเครื่อง)
 """
+import json
 import sys
+import traceback
 from datetime import datetime
 
 import numpy as np
@@ -13,14 +16,16 @@ import pandas as pd
 
 import config
 import paper
-from agents import data_agent, regime_agent, signal_agent, news_agent, risk_agent, auditor_agent, reporter_agent
+from agents import data_agent, regime_agent, news_agent, macro_agent, risk_agent, auditor_agent, reporter_agent
+from strategies import PORTFOLIOS
 
 RISKY = ("etf", "stock")
 
 
 # ---------------------------------------------------------------- เทรดออเดอร์ที่อนุมัติ (จำลองการกดใน Dime)
 def _fill_orders(c, day, open_px, close_prev):
-    rows = c.execute("SELECT * FROM orders WHERE status='approved' ORDER BY side DESC, id").fetchall()  # SELL ก่อน BUY
+    P = paper.CURRENT
+    rows = c.execute("SELECT * FROM orders WHERE portfolio=? AND status='approved' ORDER BY side DESC, id", (P,)).fetchall()
     if not rows:
         return
     cash = paper.get("cash")
@@ -68,7 +73,8 @@ def _fill_orders(c, day, open_px, close_prev):
             held = {"shares": held["shares"] + sh, "cost_usd": held["cost_usd"] + amt + fee}
             realized = 0.0
         pos[o["ticker"]] = held
-        c.execute("INSERT OR REPLACE INTO positions VALUES (?,?,?)", (o["ticker"], held["shares"], held["cost_usd"]))
+        c.execute("INSERT OR REPLACE INTO positions (portfolio, ticker, shares, cost_usd) VALUES (?,?,?,?)",
+                  (P, o["ticker"], held["shares"], held["cost_usd"]))
         c.execute("UPDATE orders SET status='filled', fill_date=?, fill_price=?, shares=?, fee=?, realized_usd=? WHERE id=?",
                   (str(day.date()), px, sh, fee, realized, o["id"]))
         paper.put("cash", cash)
@@ -76,8 +82,8 @@ def _fill_orders(c, day, open_px, close_prev):
                   {"order_id": o["id"], "usd": round(sh * px, 2), "fee": round(fee, 2)}, time=str(day.date()))
 
 
-def daily(d):
-    """เดินวันต่อวันตั้งแต่วันที่บันทึกล่าสุด: เทรดที่ราคาเปิด → บันทึกมูลค่าตอนปิด"""
+def _daily_one(d):
+    """พอร์ตปัจจุบัน: เดินวันต่อวันตั้งแต่วันที่บันทึกล่าสุด → เทรดที่ราคาเปิด → บันทึกมูลค่าตอนปิด"""
     paper.init()
     close, open_, fx = d["close"], d["open"], d["fx"]
     last = paper.get("last_marked")
@@ -93,39 +99,70 @@ def daily(d):
             px = close.loc[day]
             usd = cash + sum(p["shares"] * (px[t] if px[t] == px[t] else 0) for t, p in pos.items())
             bench = paper.get("capital") * (1 - config.COSTS["fx_spread_pct"]) * px[config.BENCHMARK] / paper.get("bench_start")
-            c.execute("INSERT OR REPLACE INTO equity VALUES (?,?,?,?)",
-                      (str(day.date()), usd, usd * float(fx.loc[day]), float(bench)))
+            c.execute("INSERT OR REPLACE INTO equity (portfolio, date, usd, thb, bench_usd) VALUES (?,?,?,?,?)",
+                      (paper.CURRENT, str(day.date()), usd, usd * float(fx.loc[day]), float(bench)))
         if len(days):
             paper.put("last_marked", str(days[-1].date()))
+
+
+def daily(d):
+    for name in PORTFOLIOS:
+        with paper.portfolio(name):
+            try:
+                _daily_one(d)
+            except Exception as e:
+                paper.log("orchestrator", "รอบรายวันล้มเหลว", {"error": str(e)[:300], "trace": traceback.format_exc()[-600:]})
     # ค่าล่าสุดให้หน้าเว็บใช้ (เว็บไม่มี pandas คำนวณเองไม่ได้)
+    close, fx = d["close"], d["fx"]
     last = close.iloc[-1]
-    paper.put("last_prices", {t: round(float(v), 4) for t, v in last.items() if v == v})
-    paper.put("fx", round(float(fx.iloc[-1]), 4))
-    paper.put("last_data", str(close.index[-1].date()))
-    paper.put("data_source", d.get("source"))
+    paper.put("last_prices", {t: round(float(v), 4) for t, v in last.items() if v == v}, shared=True)
+    paper.put("fx", round(float(fx.iloc[-1]), 4), shared=True)
+    paper.put("last_data", str(close.index[-1].date()), shared=True)
+    paper.put("data_source", d.get("source"), shared=True)
 
 
-# ---------------------------------------------------------------- สร้างแพ็กเกจตัดสินใจรายสัปดาห์
-def weekly(d, as_of=None):
-    daily(d)
+# ---------------------------------------------------------------- สร้างแพ็กเกจตัดสินใจ
+def _is_month_end_week(date):
+    """สัญญาณสัปดาห์นี้เป็นสัปดาห์สุดท้ายของเดือนไหม = วันศุกร์หน้า (หรือวันทำการถัดไปอีก 7 วัน) อยู่คนละเดือน
+    ใช้ปฏิทิน ไม่ใช้ข้อมูลราคา เพื่อให้ forward test กับ backtest ตรงกัน"""
+    return (date + pd.Timedelta(days=7)).month != date.month
+
+
+def _shared_context(d, date, as_of):
+    """สิ่งที่ทุกพอร์ตใช้ร่วมกันในรอบนี้ (คำนวณครั้งเดียว): คุณภาพข้อมูล ตัวชี้วัด มหภาค"""
+    close = d["close"]
+    quality = data_agent.quality_report(d, as_of or datetime.now())
+    ind = regime_agent.indicators(close)
+    macro = macro_agent.assess(close, d["fx"], date)
+    return {"quality": quality, "ind": ind, "macro": macro}
+
+
+def _weekly_one(d, ctx, as_of):
+    P, meta = paper.CURRENT, PORTFOLIOS[paper.CURRENT]
     close = d["close"]
     date = close.index[-1]
     if paper.get("paused"):
         paper.log("orchestrator", "โหมดพัก: ไม่สร้างแพ็กเกจ")
         return None
     with paper.conn() as c:
-        if c.execute("SELECT 1 FROM packets WHERE signal_date=?", (str(date.date()),)).fetchone():
+        if c.execute("SELECT 1 FROM packets WHERE portfolio=? AND signal_date=?", (P, str(date.date()))).fetchone():
             return None
+    if meta["cadence"] == "monthly" and not _is_month_end_week(date) and paper.get("started"):
+        return None   # กลยุทธ์รายเดือน: ตัดสินใจเฉพาะสัปดาห์สุดท้ายของเดือน (ยกเว้นรอบแรกตอนพอร์ตยังว่าง)
+    paper.put("started", True)
+    with paper.conn() as c:
         # แพ็กเกจเก่าที่ยังไม่ตัดสินใจ → หมดอายุ
-        c.execute("UPDATE orders SET status='expired', note='มีแพ็กเกจใหม่แทน' WHERE status='proposed'")
-        c.execute("UPDATE packets SET status='expired' WHERE status='awaiting'")
+        c.execute("UPDATE orders SET status='expired', note='มีแพ็กเกจใหม่แทน' WHERE portfolio=? AND status='proposed'", (P,))
+        c.execute("UPDATE packets SET status='expired' WHERE portfolio=? AND status='awaiting'", (P,))
 
-    quality = data_agent.quality_report(d, as_of or datetime.now())
-    ind = regime_agent.indicators(close)
+    ind, quality, macro = ctx["ind"], ctx["quality"], ctx["macro"]
     prev_up = paper.get("prev_up")
     reg = regime_agent.assess(close, ind, date, prev_up=prev_up)
     reg.update(prev_up=prev_up, spy_price=float(close[config.BENCHMARK].iloc[-1]),
                spy_sma=float(ind["sma"][config.BENCHMARK].iloc[-1]))
+    if macro.get("factor", 1.0) < 1:
+        reg["exposure"] = round(reg["exposure"] * macro["factor"], 3)
+        reg["reasons"].append(f"มหภาคเสี่ยงสูง ({macro.get('note', '')[:60]}) ลดของเสี่ยงอีก {1 - macro['factor']:.0%}")
 
     pos, cash = paper.positions(), paper.get("cash")
     px = close.loc[date]
@@ -133,10 +170,16 @@ def weekly(d, as_of=None):
     equity = cash + sum(vals.values())
     held_risky = [t for t in pos if config.UNIVERSE[t]["kind"] in RISKY]
 
-    prop = signal_agent.propose(close, ind, date, reg, held=held_risky)
+    # กลยุทธ์เสนอ → ข่าวกรอง → Risk Manager บังคับกฎ
+    if meta["uses_ai"]:
+        news_pre = news_agent.screen(list(pos))   # AI เห็นธงข่าวของสิ่งที่ถืออยู่ก่อนเลือก
+        prop = meta["module"].propose(close, ind, date, reg, held=held_risky,
+                                      extra={"news": news_pre.get("flags"), "macro": macro.get("note")})
+    else:
+        prop = meta["module"].propose(close, ind, date, reg, held=held_risky)
     news = news_agent.screen([t for t in prop["weights"] if config.UNIVERSE[t]["kind"] in RISKY])
     with paper.conn() as c:
-        peak = c.execute("SELECT MAX(usd) m FROM equity").fetchone()["m"] or equity
+        peak = c.execute("SELECT MAX(usd) m FROM equity WHERE portfolio=?", (P,)).fetchone()["m"] or equity
     dd = max(0.0, 1 - equity / peak)
     fin = risk_agent.apply(prop["weights"], drawdown=dd, blocked=news.get("blocked", []))
     target = fin["weights"]
@@ -151,32 +194,34 @@ def weekly(d, as_of=None):
         if t in prop["why"] and cur_w == 0:
             reason = prop["why"][t]
         elif full_exit:
-            reason = f"หลุดเกณฑ์ (อันดับโมเมนตัม {rank.get(t, '>12')} หรือต่ำกว่าเส้น 200 วัน)" \
-                if config.UNIVERSE[t]["kind"] in RISKY else "ไม่อยู่ในพอร์ตเป้าหมายแล้ว"
+            reason = (f"หลุดเกณฑ์ (อันดับ {rank.get(t, '>12')} หรือต่ำกว่าเส้น 200 วัน)" if P == "momentum"
+                      else "ไม่อยู่ในพอร์ตเป้าหมายแล้ว")
+            if t in news.get("blocked", []):
+                reason = "ข่าวร้าย: " + "; ".join(f["reason"] for f in news["flags"] if f["ticker"] == t)[:100]
         else:
-            reason = "ปรับน้ำหนักตามความผันผวน/สภาวะตลาด"
+            reason = prop["why"].get(t, "ปรับน้ำหนักตามความผันผวน/สภาวะตลาด")
         orders.append({"ticker": t, "side": "BUY" if tgt_w > cur_w else "SELL",
                        "usd": round(abs(tgt_w - cur_w) * equity, 2), "ref_price": float(px[t]),
                        "w_from": round(cur_w, 4), "w_to": round(tgt_w, 4), "reason": reason})
 
-    packet = {"signal_date": str(date.date()), "regime": reg, "target": target, "orders": orders,
-              "equity": round(equity, 2), "cash": round(cash, 2), "drawdown": round(dd, 4),
-              "held_risky": held_risky, "news": news, "risk_log": fin["log"], "ranking": prop["ranking"],
-              "prev_regime": paper.get("prev_regime"), "quality": quality, "data_source": d.get("source")}
+    packet = {"portfolio": P, "strategy": meta["name"], "signal_date": str(date.date()), "regime": reg, "target": target,
+              "orders": orders, "equity": round(equity, 2), "cash": round(cash, 2), "drawdown": round(dd, 4),
+              "held_risky": held_risky, "news": news, "macro": macro, "risk_log": fin["log"], "ranking": prop["ranking"],
+              "ai_view": prop.get("view"), "prev_regime": paper.get("prev_regime"), "quality": quality,
+              "data_source": d.get("source")}
     audit = auditor_agent.audit(packet, d, quality)
     report = reporter_agent.write(packet, audit)
     status = "blocked" if audit["status"] == "fail" else ("awaiting" if orders else "no_action")
 
     with paper.conn() as c:
-        import json
-        cur = c.execute("INSERT INTO packets (created, signal_date, status, data, audit, report) VALUES (?,?,?,?,?,?)",
-                        (paper.now_th(), packet["signal_date"], status,
+        cur = c.execute("INSERT INTO packets (portfolio, created, signal_date, status, data, audit, report) VALUES (?,?,?,?,?,?,?)",
+                        (P, paper.now_th(), packet["signal_date"], status,
                          json.dumps(packet, ensure_ascii=False, default=float), json.dumps(audit, ensure_ascii=False), report))
         pid = cur.lastrowid
         for o in orders:
-            c.execute("INSERT INTO orders (packet_id, ticker, side, usd, ref_price, w_from, w_to, reason, status) "
-                      "VALUES (?,?,?,?,?,?,?,?,?)",
-                      (pid, o["ticker"], o["side"], o["usd"], o["ref_price"], o["w_from"], o["w_to"], o["reason"],
+            c.execute("INSERT INTO orders (portfolio, packet_id, ticker, side, usd, ref_price, w_from, w_to, reason, status) "
+                      "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (P, pid, o["ticker"], o["side"], o["usd"], o["ref_price"], o["w_from"], o["w_to"], o["reason"],
                        "proposed" if status == "awaiting" else "blocked"))
     paper.put("prev_up", reg["spy_above_sma"])
     paper.put("prev_regime", reg["regime"])
@@ -185,8 +230,23 @@ def weekly(d, as_of=None):
     return pid
 
 
+def weekly(d, as_of=None, portfolios=None):
+    daily(d)
+    date = d["close"].index[-1]
+    ctx = _shared_context(d, date, as_of)
+    out = {}
+    for name in (portfolios or PORTFOLIOS):
+        with paper.portfolio(name):
+            try:
+                out[name] = _weekly_one(d, ctx, as_of)
+            except Exception as e:
+                paper.log("orchestrator", "สร้างแพ็กเกจล้มเหลว", {"error": str(e)[:300], "trace": traceback.format_exc()[-800:]})
+                out[name] = None
+    return out
+
+
 def decide(order_ids, decision, when=None):
-    """คุณกดอนุมัติ/ปฏิเสธ — ใช้ได้เฉพาะออเดอร์ที่อยู่สถานะ proposed หรือ held"""
+    """คุณกดอนุมัติ/ปฏิเสธ — ใช้ได้เฉพาะออเดอร์ที่อยู่สถานะ proposed หรือ held (ทุกพอร์ต)"""
     when = when or paper.now_th()
     new = {"approve": "approved", "reject": "rejected"}[decision]
     with paper.conn() as c:
@@ -195,41 +255,50 @@ def decide(order_ids, decision, when=None):
             cur = c.execute("UPDATE orders SET status=?, decided_at=? WHERE id=? AND status IN ('proposed','held')",
                             (new, when, oid))
             n += cur.rowcount
-        # ตัดสินใจครบทุกออเดอร์แล้ว → แพ็กเกจปิด
         c.execute("UPDATE packets SET status='decided' WHERE status='awaiting' AND id NOT IN "
                   "(SELECT packet_id FROM orders WHERE status='proposed')")
-    paper.log("owner", f"{'อนุมัติ' if decision == 'approve' else 'ปฏิเสธ'} {n} ออเดอร์", {"ids": order_ids}, time=when[:10])
+    paper.log("owner", f"{'อนุมัติ' if decision == 'approve' else 'ปฏิเสธ'} {n} ออเดอร์", {"ids": order_ids}, time=when[:10], shared=True)
     return n
 
 
 def kill():
-    paper.put("paused", True)
     with paper.conn() as c:
+        for name in PORTFOLIOS:
+            with paper.portfolio(name):
+                paper.put("paused", True)
         n = c.execute("UPDATE orders SET status='cancelled', note='Kill switch' WHERE status IN ('approved','proposed','held')").rowcount
         c.execute("UPDATE packets SET status='cancelled' WHERE status='awaiting'")
-    paper.log("owner", "Kill switch: หยุดระบบ", {"cancelled_orders": n})
+    paper.log("owner", "Kill switch: หยุดทุกพอร์ต", {"cancelled_orders": n}, shared=True)
     return n
 
 
 def resume():
-    paper.put("paused", False)
-    paper.log("owner", "กลับมาทำงานต่อ")
+    for name in PORTFOLIOS:
+        with paper.portfolio(name):
+            paper.put("paused", False)
+    paper.log("owner", "กลับมาทำงานต่อ", shared=True)
 
 
 def publish_backtest(d):
-    """รัน backtest + ทดสอบความทนทานด้วยข้อมูลจริง แล้วเก็บผลให้หน้าเว็บแสดง"""
-    import json
+    """backtest 3 กลยุทธ์โค้ด (AI Pick ทดสอบย้อนหลังไม่ได้ เพราะ Claude รู้อนาคต) + ความทนทานของ Momentum"""
     from agents import backtest_agent
-    res = backtest_agent.run(d)
     wk = lambda s: [{"time": str(i.date()), "value": round(float(v), 2)} for i, v in s.resample("W-FRI").last().dropna().items()]
-    out = {"stats": res["stats"], "params": res["params"], "equity": wk(res["equity"]), "bench": wk(res["bench"]),
-           "last_weights": res["weights_log"][-1] if res["weights_log"] else None,
-           "robustness": backtest_agent.robustness(d)}
-    with paper.conn() as c:
-        c.execute("INSERT INTO backtests (created, source, data) VALUES (?,?,?)",
-                  (paper.now_th(), d.get("source"), json.dumps(out, ensure_ascii=False, default=float)))
-    paper.log("backtest", "อัปเดตผล backtest", {"cagr": out["stats"]["strategy"].get("cagr"),
-                                                 "max_dd": out["stats"]["strategy"].get("max_dd")})
+    out = {}
+    for name, meta in PORTFOLIOS.items():
+        if meta["uses_ai"]:
+            continue
+        res = backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"])
+        o = {"stats": res["stats"], "params": res["params"], "equity": wk(res["equity"]), "bench": wk(res["bench"]),
+             "last_weights": res["weights_log"][-1] if res["weights_log"] else None}
+        if name == "momentum":
+            o["robustness"] = backtest_agent.robustness(d)
+        with paper.portfolio(name):
+            with paper.conn() as c:
+                c.execute("INSERT INTO backtests (portfolio, created, source, data) VALUES (?,?,?,?)",
+                          (name, paper.now_th(), d.get("source"), json.dumps(o, ensure_ascii=False, default=float)))
+            paper.log("backtest", "อัปเดตผล backtest", {"cagr": o["stats"]["strategy"].get("cagr"),
+                                                         "max_dd": o["stats"]["strategy"].get("max_dd")})
+        out[name] = o
     return out
 
 
@@ -238,12 +307,12 @@ def load_data(source="auto"):
         source = "yfinance"   # บนคลาวด์ใช้ข้อมูลจริงเท่านั้น
     d, src = data_agent.load(source, allow_synthetic=not paper.remote())
     d["source"] = src
-    paper.log("data", f"โหลดข้อมูลจาก {src}", {"last": str(d["close"].index[-1].date())})
+    paper.log("data", f"โหลดข้อมูลจาก {src}", {"last": str(d["close"].index[-1].date())}, shared=True)
     return d
 
 
 # ---------------------------------------------------------------- ทดสอบทั้งวงจรย้อนหลัง
-def simulate(d_full, weeks=52):
+def simulate(d_full, weeks=52, portfolios=None):
     """เดินระบบวันต่อวันย้อนหลัง N สัปดาห์ด้วยข้อมูลที่ตัดถึงวันนั้นเท่านั้น และอนุมัติทุกออเดอร์อัตโนมัติ
     ยกเว้นแพ็กเกจสุดท้าย ปล่อยไว้ให้คุณลองกดตัดสินใจเอง"""
     paper.reset()
@@ -255,11 +324,12 @@ def simulate(d_full, weeks=52):
         d = data_agent.truncate(d_full, day)
         d["source"] = d_full.get("source")
         if day in week_end:
-            pid = weekly(d, as_of=day)
-            if pid and i < len(idx) - 1:
+            pids = weekly(d, as_of=day, portfolios=portfolios)
+            if i < len(idx) - 1:
                 with paper.conn() as c:
-                    ids = [r["id"] for r in c.execute("SELECT id FROM orders WHERE packet_id=? AND status='proposed'", (pid,))]
-                decide(ids, "approve", when=str(day.date()) + "T23:00:00")
+                    ids = [r["id"] for r in c.execute("SELECT id FROM orders WHERE status='proposed'")]
+                if ids:
+                    decide(ids, "approve", when=str(day.date()) + "T23:00:00")
         else:
             daily(d)
 
@@ -275,8 +345,8 @@ if __name__ == "__main__":
     elif mode == "weekly":
         print("แพ็กเกจ:", weekly(data))
     elif mode == "backtest":
-        st = publish_backtest(data)["stats"]["strategy"]
-        print("backtest:", st)
+        for k, v in publish_backtest(data).items():
+            print(k, v["stats"]["strategy"])
     elif mode == "simulate":
         simulate(data)
         print("จำลองเสร็จ ดูผลที่หน้าเว็บ")

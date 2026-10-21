@@ -9,7 +9,8 @@
 import pandas as pd
 
 import config
-from agents import risk_agent, regime_agent, signal_agent
+from agents import risk_agent, regime_agent
+from strategies import PORTFOLIOS
 
 
 def audit(packet, d, quality):
@@ -30,16 +31,30 @@ def audit(packet, d, quality):
     # 3) คำนวณสัญญาณซ้ำจากข้อมูลดิบ ต้องได้ผลเท่ากัน (จับบั๊กหรือการแก้ตัวเลขระหว่างทาง)
     ind = regime_agent.indicators(close)
     reg = regime_agent.assess(close, ind, date, prev_up=packet["regime"].get("prev_up"))
-    if abs(reg["exposure"] - packet["regime"]["exposure"]) > 1e-6:
-        fails.append(f"สัดส่วนของเสี่ยงไม่ตรง: คำนวณซ้ำได้ {reg['exposure']} แต่แพ็กเกจบอก {packet['regime']['exposure']}")
-    again = signal_agent.propose(close, ind, date, reg, held=packet.get("held_risky", []))
-    again = risk_agent.apply(again["weights"], drawdown=packet.get("drawdown", 0),
-                             blocked=packet.get("news", {}).get("blocked", []))["weights"]
-    diff = {t: abs(again.get(t, 0) - packet["target"].get(t, 0)) for t in set(again) | set(packet["target"])}
-    worst = max(diff.values(), default=0)
-    if worst > 0.005:
-        t = max(diff, key=diff.get)
-        fails.append(f"น้ำหนัก {t} ไม่ตรงกับที่คำนวณซ้ำ (ต่าง {worst:.1%})")
+    base_expo = packet["regime"]["exposure"] / max(packet.get("macro", {}).get("factor", 1.0), 1e-9)
+    if abs(reg["exposure"] - base_expo) > 1e-3:
+        fails.append(f"สัดส่วนของเสี่ยงไม่ตรง: คำนวณซ้ำได้ {reg['exposure']} แต่แพ็กเกจบอก {round(base_expo, 3)}")
+    meta = PORTFOLIOS.get(packet.get("portfolio", "momentum"))
+    if meta and not meta["uses_ai"]:
+        # กลยุทธ์โค้ด: คำนวณซ้ำได้ ต้องได้เท่ากัน
+        if packet.get("macro", {}).get("factor", 1.0) < 1:
+            reg["exposure"] = round(reg["exposure"] * packet["macro"]["factor"], 3)
+        again = meta["module"].propose(close, ind, date, reg, held=packet.get("held_risky", []))
+        again = risk_agent.apply(again["weights"], drawdown=packet.get("drawdown", 0),
+                                 blocked=packet.get("news", {}).get("blocked", []))["weights"]
+        diff = {t: abs(again.get(t, 0) - packet["target"].get(t, 0)) for t in set(again) | set(packet["target"])}
+        worst = max(diff.values(), default=0)
+        if worst > 0.005:
+            t = max(diff, key=diff.get)
+            fails.append(f"น้ำหนัก {t} ไม่ตรงกับที่คำนวณซ้ำ (ต่าง {worst:.1%})")
+    else:
+        # กลยุทธ์ AI: คำนวณซ้ำไม่ได้ (คำตอบไม่คงที่) → ตรวจแค่ว่า Risk Manager บังคับกฎกับคำตอบของ AI แล้วจริง
+        risky_w = sum(w for t, w in packet["target"].items() if config.UNIVERSE[t]["kind"] in ("etf", "stock"))
+        if risky_w > reg["exposure"] * packet.get("macro", {}).get("factor", 1.0) + 0.01 and reg["exposure"] < 1:
+            warns.append(f"AI ถือของเสี่ยง {risky_w:.0%} มากกว่าที่สภาวะตลาดแนะนำ ({reg['exposure']:.0%})")
+        for t in packet.get("news", {}).get("blocked", []):
+            if packet["target"].get(t, 0) > 0:
+                fails.append(f"{t} ถูกข่าวบล็อกแต่ยังอยู่ในพอร์ตเป้าหมาย")
 
     # 4) ออเดอร์สอดคล้องกับพอร์ตเป้าหมายและราคา
     px = close.iloc[-1]
