@@ -64,7 +64,7 @@ def write(packet, audit):
     data = llm.ask_json("reporter",
         "คุณคือผู้แปลผลให้เจ้าของพอร์ตที่ไม่ใช่นักการเงิน เขียนภาษาไทยง่ายๆ ห้ามสร้างตัวเลขใหม่ ใช้เฉพาะตัวเลขในข้อมูล "
         "ห้ามแนะนำให้ทำเกินกว่าที่ออเดอร์เสนอ รูปแบบ: {\"summary\":\"สรุป 3-5 ประโยค\",\"risks\":[\"ความเสี่ยง 1\",\"ความเสี่ยง 2\"]}",
-        json.dumps({"summary": text, "orders": packet["orders"], "audit": audit}, ensure_ascii=False), 800)
+        json.dumps({"summary": text, "orders": packet["orders"], "audit": audit}, ensure_ascii=False), 3000)
     if not data or not data.get("summary"):
         return text
     risks = "".join(f"\n• {r}" for r in (data.get("risks") or [])[:3])

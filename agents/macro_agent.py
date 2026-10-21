@@ -41,7 +41,7 @@ def assess(close, fx, date, headlines=None):
         "date": str(date.date()),
     }
     heads = headlines if headlines is not None else _market_headlines()
-    data = llm.ask_json("macro", SYSTEM, "ตัวเลข:\n" + json.dumps(facts) + "\n\nหัวข่าว:\n" + json.dumps(heads, ensure_ascii=False), 600)
+    data = llm.ask_json("macro", SYSTEM, "ตัวเลข:\n" + json.dumps(facts) + "\n\nหัวข่าว:\n" + json.dumps(heads, ensure_ascii=False), 2000)
     if not data or data.get("risk_level") not in CUT:
         return {"enabled": True, "risk_level": "normal", "factor": 1.0, "error": "Macro Agent ล้มเหลว (ใช้ค่า: ปกติ)"}
     lvl = data["risk_level"]

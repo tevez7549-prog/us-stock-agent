@@ -56,7 +56,7 @@ def propose(close, ind, date, regime, p=None, held=(), extra=None):
     user = json.dumps({"date": str(date.date()), "regime": regime.get("regime"), "exposure_hint": regime.get("exposure"),
                        "currently_held": list(held), "news": (extra or {}).get("news"), "macro": (extra or {}).get("macro"),
                        "assets": table}, ensure_ascii=False)
-    data = llm.ask_json("ai_pick", SYSTEM, user, 1200)
+    data = llm.ask_json("ai_pick", SYSTEM, user, 6000)
     if not data or not isinstance(data.get("weights"), dict):
         return fallback
     w = {}

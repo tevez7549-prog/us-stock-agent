@@ -186,6 +186,10 @@ def _weekly_one(d, ctx, as_of):
     with paper.conn() as c:
         if c.execute("SELECT 1 FROM packets WHERE portfolio=? AND signal_date=?", (P, str(date.date()))).fetchone():
             return None
+        waiting = c.execute("SELECT COUNT(*) n FROM orders WHERE portfolio=? AND status IN ('approved','held')", (P,)).fetchone()["n"]
+    if waiting:   # แพ็กเกจก่อนยังเทรดไม่เสร็จ → พอร์ตยังไม่ใช่ของจริง สร้างใหม่ตอนนี้จะเสนอซื้อซ้ำ
+        paper.log("orchestrator", "ข้ามการสร้างแพ็กเกจ: ยังมีออเดอร์ที่อนุมัติแล้วรอเทรด", {"orders": waiting})
+        return None
     if meta["cadence"] == "monthly" and not _is_month_end_week(date) and paper.get("started"):
         return None   # กลยุทธ์รายเดือน: ตัดสินใจเฉพาะสัปดาห์สุดท้ายของเดือน (ยกเว้นรอบแรกตอนพอร์ตยังว่าง)
     paper.put("started", True)
