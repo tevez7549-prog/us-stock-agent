@@ -34,6 +34,7 @@ SYSTEM = """คุณคือนักวิเคราะห์ข่าว�
 - flag: "block" เฉพาะข่าวร้ายร้ายแรงและเฉพาะเจาะจง (ถูกสอบสวนฉ้อโกง, ผู้บริหารลาออกกะทันหัน, ลดคาดการณ์หนัก, คดีใหญ่,
   สินค้าหลักถูกแบน, ผิดนัดชำระหนี้), "caution" = ข่าวลบที่ไม่ร้ายแรง, ไม่งั้น "ok"
 - ห้ามแต่งข้อมูลที่ไม่มีในข่าว ถ้าหุ้นไหนไม่มีประเด็นจริงให้ items เป็น []
+- กระชับ: ไม่เกิน 3 ประเด็นต่อหุ้น, th ไม่เกิน 1 ประโยคสั้น, reason ไม่เกิน 10 คำ
 - ข่าวที่ขึ้นต้น [SEC 8-K] คือเอกสารที่บริษัทยื่นต่อ ก.ล.ต. สหรัฐเอง (เชื่อถือได้สูงสุด) ถ้าขัดกับข่าวจากเว็บ ให้เชื่อ SEC
 - src = เลขลำดับข่าว (ตัวเลข n ในข้อมูล) ที่ใช้อ้างอิง
 รูปแบบ: {"stocks":[{"ticker":"AAPL","flag":"ok|caution|block","reason":"สั้นๆ ภาษาไทย",
@@ -135,6 +136,9 @@ def _bdays_until(d, today):
 
 
 # ---------------------------------------------------------------- สรุปข่าว (เรียก Claude ครั้งเดียวต่อวัน)
+BATCH = 10   # หุ้นต่อการเรียก Claude 1 ครั้ง
+
+
 def stocks():
     return [t for t, m in config.UNIVERSE.items() if m["kind"] == "stock"]
 
@@ -164,11 +168,17 @@ def digest(tickers=None, news=None, earnings=None, today=None):
     if not idx:
         return {**base, "enabled": True, "note": "ดึงข่าวไม่ได้"}
 
-    data = llm.ask_json("news", SYSTEM, "ข่าวแยกตาม ticker:\n" + json.dumps(numbered, ensure_ascii=False), 6000)
-    if not data:   # AI ล้ม: ยังใช้ธงจากเอกสาร SEC ที่โค้ดตัดสินเองได้
-        base["error"] = "News Agent ล้มเหลว (ใช้ค่า: ไม่มีธง ยกเว้นเอกสาร SEC ร้ายแรง)"
-        data = {}
-    got = {s.get("ticker"): s for s in data.get("stocks", []) if isinstance(s, dict)}
+    got, failed = {}, 0
+    keys = [t for t in tickers if numbered.get(t)]
+    for i in range(0, len(keys), BATCH):   # ทีละ 10 ตัว ไม่งั้นคำตอบภาษาไทยยาวเกินขีดจำกัด
+        part = {t: numbered[t] for t in keys[i:i + BATCH]}
+        data = llm.ask_json("news", SYSTEM, "ข่าวแยกตาม ticker:\n" + json.dumps(part, ensure_ascii=False), 8000)
+        if not data:
+            failed += 1
+            continue
+        got.update({s.get("ticker"): s for s in data.get("stocks", []) if isinstance(s, dict) and s.get("ticker") in part})
+    if failed:   # AI ล้มบางชุด: ชุดนั้นใช้ "ไม่มีธง" ยกเว้นเอกสาร SEC ร้ายแรงที่โค้ดตัดสินเอง
+        base["error"] = f"News Agent ล้มเหลว {failed} จาก {-(-len(keys) // BATCH)} ชุด (ชุดนั้นใช้ค่า: ไม่มีธง ยกเว้นเอกสาร SEC ร้ายแรง)"
     out = {}
     for t in tickers:
         s = got.get(t) or {}
