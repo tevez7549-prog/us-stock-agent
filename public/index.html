@@ -91,17 +91,20 @@
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
       <h2 style="margin:0">4 กลยุทธ์ vs ถือ SPY เฉยๆ (USD, ราคาปิด, ทุนเริ่มต้นเท่ากัน)</h2>
       <div class="row">
-        <button id="btnDaily" hidden>สั่งรันรายวัน</button>
-        <button id="btnWeekly" class="primary" hidden>สร้างแพ็กเกจตอนนี้</button>
+        <button id="btnDaily">สั่งรันรายวัน</button>
+        <button id="btnWeekly" class="primary">สร้างแพ็กเกจตอนนี้</button>
         <button id="btnKill" class="danger">Kill switch</button>
       </div>
     </div>
+    <div class="runBox muted" style="font-size:13px;margin:6px 0" hidden></div>
     <div id="ovChart" class="chart"></div>
   </div>
   <div class="panel"><h2>เปรียบเทียบ</h2><div class="scroll"><table id="cmpTbl" class="mono"></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">ทุกพอร์ตใช้ Risk Manager, ข่าว และมหภาคชุดเดียวกัน ต่างกันแค่วิธีเลือกสินทรัพย์ · AI Pick ไม่มี backtest เพราะ Claude รู้อดีตอยู่แล้ว</div></div>
   <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">ข่าวหุ้น <span class="muted" id="newsMeta"></span></h2>
-      <select id="newsSel"><option value="2">เฉพาะข่าวสำคัญ</option><option value="1">ทั้งหมด</option></select></div>
+      <div class="row" style="gap:6px"><select id="newsSel"><option value="2">เฉพาะข่าวสำคัญ</option><option value="1">ทุกข่าว</option></select>
+        <select id="newsN"><option value="5">แสดง 5 ตัว</option><option value="10">แสดง 10 ตัว</option><option value="20">แสดง 20 ตัว</option><option value="999">แสดงทั้งหมด</option></select>
+        <button id="newsTog">ซ่อน</button></div></div>
     <div id="newsBox" style="margin-top:8px"></div>
     <div class="muted" style="font-size:12px;margin-top:8px">AI อ่านข่าว 7 วัน (เอกสาร SEC 8-K + Finnhub) วันละครั้ง ของหุ้นที่ถืออยู่ + หุ้นโมเมนตัมสูงสุด 30 ตัวใน S&P 500 · ข่าวดีมีผลกับ AI Pick เท่านั้น · ธง "ตัดออก" ใช้กับทุกพอร์ต · งบใกล้ออก = ระวัง (ราคาอาจกระโดด)</div></div>
   <div class="panel"><div class="row" style="justify-content:space-between"><h2 id="posTitle" style="margin:0">สิ่งที่ถืออยู่</h2><select id="posSel"></select></div><div class="scroll" style="margin-top:8px"><table id="posTbl"></table></div></div>
@@ -132,7 +135,9 @@
 
 <!-- ============ Backtest ============ -->
 <section id="bt">
-  <div class="row"><select id="btPort"></select><div id="btInfo" class="muted" style="font-size:13px"></div></div>
+  <div class="row"><select id="btPort"></select><div id="btInfo" class="muted" style="font-size:13px;flex:1"></div>
+    <button id="btnBt" class="primary">รัน Backtest ใหม่</button></div>
+  <div class="runBox muted" style="font-size:13px;margin:6px 0" hidden></div>
   <div class="kpis" id="btKpi"></div>
   <div class="panel"><h2>Equity: กลยุทธ์ vs SPY (USD, log scale)</h2><div id="btChart" class="chart"></div></div>
   <div class="grid2">
@@ -159,6 +164,15 @@
       <div id="aiState" style="font-size:13px;margin-bottom:8px"></div>
       <div class="row"><input id="aiKey" type="password" placeholder="sk-ant-..." autocomplete="off" style="flex:1;min-width:200px">
         <button id="btnAi" class="primary">บันทึก</button><button id="btnAiDel">ลบ</button></div>
+    </div>
+    <div class="panel">
+      <h2>สั่งรันจากเว็บ (GitHub token)</h2>
+      <div class="muted" style="font-size:13px;margin-bottom:10px;line-height:1.7">ใส่แล้วจะมีปุ่มสั่งรันรายวัน / สร้างแพ็กเกจ / Backtest บนเว็บ · วิธีสร้าง:
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener" style="color:var(--accent)">เปิดหน้าสร้าง token</a>
+        → Repository access: <b>Only select repositories</b> เลือก <b>us-stock-agent</b> → Permissions: <b>Actions = Read and write</b> → Generate แล้ววางที่นี่ · เก็บแบบเข้ารหัส</div>
+      <div id="ghState" style="font-size:13px;margin-bottom:8px"></div>
+      <div class="row"><input id="ghKey" type="password" placeholder="github_pat_..." autocomplete="off" style="flex:1;min-width:200px">
+        <button id="btnGh" class="primary">บันทึก</button><button id="btnGhDel">ลบ</button></div>
     </div>
     <div class="panel">
       <h2>เปลี่ยนรหัสผ่านเข้าเว็บ</h2>
@@ -244,7 +258,7 @@ async function loadStatus(){
   const paused = anyPaused();
   $("runBadge").textContent = paused ? "โหมดพัก" : (S.ai_enabled ? "ทำงาน · AI เปิด" : "ทำงาน"); $("runBadge").className = "badge " + (paused ? "bad" : "ok");
   $("btnKill").textContent = paused ? "ทำงานต่อ" : "Kill switch"; $("btnKill").className = paused ? "good" : "danger";
-  $("btnDaily").hidden = $("btnWeekly").hidden = !S.can_run;
+  if (S.can_run && !loadStatus.polled){ loadStatus.polled = true; pollRun(); }
   $("pendDot").hidden = !S.pending; $("pendDot").textContent = S.pending;
   const w = [];
   if (!S.last_data) w.push("ยังไม่มีข้อมูล — เอเจนต์จะรันครั้งแรกตามเวลาที่ตั้งไว้ (หรือสั่งรันใน GitHub Actions)");
@@ -292,8 +306,13 @@ function render(){
 $("posSel").onchange = e => { posPort = e.target.value; render(); };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const NTYPE = {product:"สินค้าใหม่",earnings:"งบ",deal:"ดีล/สัญญา",regulatory:"กฎหมาย/คดี",management:"ผู้บริหาร",analyst:"นักวิเคราะห์",other:"อื่นๆ"};
+const pref = (k, v) => { try{ if (v === undefined) return localStorage.getItem("usa_" + k); localStorage.setItem("usa_" + k, v); }catch(e){ return null; } };
+let newsMore = 0;
 function renderNews(){
-  const g = S && S.news_digest, min = +$("newsSel").value;
+  const g = S && S.news_digest, min = +$("newsSel").value, hidden = pref("news_hide") === "1";
+  $("newsTog").textContent = hidden ? "แสดง" : "ซ่อน";
+  $("newsSel").hidden = $("newsN").hidden = hidden;
+  if (hidden){ $("newsBox").innerHTML = ""; return; }
   if (!g){ $("newsBox").innerHTML = '<div class="muted">ยังไม่มี — จะมีหลังรอบรายวันครั้งถัดไป</div>'; $("newsMeta").textContent = ""; return; }
   $("newsMeta").textContent = `· ${g.date || ""}${g.source ? " · " + g.source : ""}`;
   if (!g.enabled){ $("newsBox").innerHTML = `<div class="muted">${esc(g.note)}</div>`; return; }
@@ -301,8 +320,9 @@ function renderNews(){
   const held = new Set(allPositions()), rank = {block:0, caution:1, ok:2};
   const rows = Object.entries(g.stocks || {}).map(([t,s]) => ({t, s, items:(s.items||[]).filter(i => i.importance >= min)}))
     .filter(r => r.items.length || r.s.flag !== "ok" || (min === 1 && (r.s.filings||[]).length))
-    .sort((a,b) => rank[a.s.flag]-rank[b.s.flag] || Math.max(0,...b.items.map(i=>i.importance)) - Math.max(0,...a.items.map(i=>i.importance)));
-  $("newsBox").innerHTML = rows.length ? rows.map(({t,s,items}) => `<div style="padding:8px 0;border-top:1px solid var(--line)">
+    .sort((a,b) => rank[a.s.flag]-rank[b.s.flag] || held.has(b.t)-held.has(a.t) || Math.max(0,...b.items.map(i=>i.importance)) - Math.max(0,...a.items.map(i=>i.importance)));
+  const total = rows.length, shown = rows.slice(0, +$("newsN").value + newsMore);
+  $("newsBox").innerHTML = shown.length ? shown.map(({t,s,items}) => `<div style="padding:8px 0;border-top:1px solid var(--line)">
       <div class="row" style="gap:6px"><b class="mono">${esc(t)}</b><span class="muted" style="font-size:12px">${esc((S.names||{})[t]||"")}</span>${held.has(t)?'<span class="badge">ถืออยู่</span>':""}
         ${s.flag==="block"?'<span class="badge bad">ตัดออก</span>':s.flag==="caution"?'<span class="badge warn">ระวัง</span>':""}
         ${s.reason && s.flag!=="ok"?`<span class="muted" style="font-size:12px">${esc(s.reason)}</span>`:""}${s.earnings?`<span class="muted" style="font-size:12px">· งบ ${esc(s.earnings)}</span>`:""}</div>
@@ -310,10 +330,15 @@ function renderNews(){
         <span class="badge">${NTYPE[i.type]||i.type}</span> ${"★".repeat(i.importance)} ${esc(i.th)}${(i.links||[]).some(l => l.source === "SEC 8-K") ? ' <span class="badge ok" title="ยืนยันจากเอกสารที่บริษัทยื่นต่อ SEC">SEC</span>' : ""}
         ${(i.links||[]).filter(l => /^https?:\/\//.test(l.url)).map((l,k) => ` <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" title="${esc(l.title)}" style="color:var(--accent);font-size:12px">[${esc(l.source||"ข่าว "+(k+1))}]</a>`).join("")}</div>`).join("")}
       ${min === 1 ? (s.filings||[]).filter(f => /^https?:\/\//.test(f.url)).map(f => `<div style="font-size:12px;margin-top:3px" class="muted">📄 ${esc(f.date)} <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">${esc(f.title)}</a></div>`).join("") : ""}
-    </div>`).join("") : '<div class="muted">ไม่มีข่าวสำคัญของหุ้นในรายชื่อ 7 วันนี้</div>';
+    </div>`).join("") + (total > shown.length ? `<div style="border-top:1px solid var(--line);padding-top:8px"><button id="newsMore">ดูเพิ่ม (เหลืออีก ${total - shown.length} ตัว)</button></div>` : "")
+    : '<div class="muted">ไม่มีข่าวสำคัญของหุ้นในรายชื่อ 7 วันนี้</div>';
   $("newsBox").innerHTML = errBox + $("newsBox").innerHTML;
+  if ($("newsMore")) $("newsMore").onclick = () => { newsMore += 10; renderNews(); };
 }
-$("newsSel").onchange = renderNews;
+$("newsSel").onchange = () => { newsMore = 0; renderNews(); };
+$("newsN").value = pref("news_n") || "5";
+$("newsN").onchange = e => { pref("news_n", e.target.value); newsMore = 0; renderNews(); };
+$("newsTog").onclick = () => { pref("news_hide", pref("news_hide") === "1" ? "0" : "1"); renderNews(); };
 async function refreshQuotes(){
   const syms = allPositions();
   if (!S || !S.live_quotes || !syms.length){ $("liveBadge").hidden = true; return; }
@@ -325,7 +350,27 @@ async function refreshQuotes(){
 }
 setInterval(() => { if (S && usMarketOpen() && !document.hidden) refreshQuotes(); }, 30000);
 
-const runAgent = mode => async e => guard(e.target, async () => { await api("/api/run",{mode}); alert("สั่งรันแล้ว ใช้เวลาประมาณ 2–5 นาที แล้วกดรีเฟรชหน้า"); });
+const MODE_TH = {daily:"รายวัน", weekly:"สร้างแพ็กเกจ + backtest", backtest:"Backtest"};
+let runTimer = null;
+async function pollRun(){
+  try{
+    const r = await api("/api/run/status"), x = (r.runs||[])[0];
+    if (!x){ return; }
+    const t = new Date(x.created).toLocaleString("th-TH",{hour12:false});
+    const st = x.status === "completed" ? (x.conclusion === "success" ? '<span class="up">✓ เสร็จแล้ว</span>' : `<span class="down">✗ ล้มเหลว (${esc(x.conclusion)})</span>`) : '<span class="live"></span>กำลังรัน… (ประมาณ 5–15 นาที)';
+    document.querySelectorAll(".runBox").forEach(b => { b.hidden = false; b.innerHTML = `รอบล่าสุด ${t} · ${st} · <a href="${esc(x.url)}" target="_blank" rel="noopener" style="color:var(--accent)">ดูใน GitHub</a>`; });
+    clearTimeout(runTimer);
+    if (x.status !== "completed") runTimer = setTimeout(pollRun, 20000);
+    else if (pollRun.waiting){ pollRun.waiting = false; await loadStatus(); if (typeof loadBt === "function") loadBt(); }
+  }catch(e){}
+}
+const runAgent = mode => async e => guard(e.target, async () => {
+  if (!S.can_run){ alert("ใส่ GitHub token ในแท็บตั้งค่าก่อน"); return; }
+  await api("/api/run",{mode}); pollRun.waiting = true;
+  document.querySelectorAll(".runBox").forEach(b => { b.hidden = false; b.innerHTML = `สั่งรัน${MODE_TH[mode]}แล้ว รอ GitHub เริ่มงาน…`; });
+  setTimeout(pollRun, 8000);
+});
+$("btnBt").onclick = runAgent("backtest");
 $("btnDaily").onclick = runAgent("daily");
 $("btnWeekly").onclick = runAgent("weekly");
 $("btnKill").onclick = e => guard(e.target, async () => {
@@ -424,6 +469,7 @@ async function loadJournal(){
 function loadSettings(){
   if (!S) return;
   $("fhState").innerHTML = S.live_quotes ? '<span class="up">✓ ตั้ง Finnhub key แล้ว</span>' : '<span class="muted">ยังไม่ได้ตั้ง — หน้าเว็บจะใช้ราคาปิดล่าสุด</span>';
+  $("ghState").innerHTML = S.can_run ? '<span class="up">✓ ตั้งแล้ว — สั่งรันจากเว็บได้</span>' : '<span class="muted">ยังไม่ได้ตั้ง — ยังกดปุ่มสั่งรันไม่ได้</span>';
   $("aiState").innerHTML = S.ai_enabled ? '<span class="up">✓ ตั้ง Anthropic key แล้ว — เอเจนต์ AI ทำงาน</span>' : '<span class="muted">ยังไม่ได้ตั้ง — เอเจนต์ข่าว/มหภาค/AI Pick ปิดอยู่</span>';
   $("lastRun").textContent = S.last_run ? `${S.last_run.time.replace("T"," ").slice(0,16)} · ${S.last_run.event}` : "ยังไม่เคยรัน";
   $("pwForm").querySelectorAll("input,button").forEach(x => x.disabled = S.password_env);
@@ -432,6 +478,9 @@ function loadSettings(){
 const saveFh = key => async e => guard(e.target, async () => { await api("/api/settings",{finnhub_key:key()}); $("fhKey").value = ""; await loadStatus(); loadSettings(); });
 $("btnFh").onclick = saveFh(() => $("fhKey").value.trim());
 $("btnFhDel").onclick = saveFh(() => "");
+const saveGh = key => async e => guard(e.target, async () => { await api("/api/settings",{github_token:key()}); $("ghKey").value = ""; await loadStatus(); loadSettings(); });
+$("btnGh").onclick = saveGh(() => $("ghKey").value.trim());
+$("btnGhDel").onclick = e => { if (confirm("ลบ GitHub token แล้วจะสั่งรันจากเว็บไม่ได้ ยืนยันไหม?")) saveGh(() => "")(e); };
 const saveAi = key => async e => guard(e.target, async () => { await api("/api/settings",{anthropic_key:key()}); $("aiKey").value = ""; await loadStatus(); loadSettings(); });
 $("btnAi").onclick = saveAi(() => $("aiKey").value.trim());
 $("btnAiDel").onclick = e => { if (confirm("ลบ Anthropic key จะปิดเอเจนต์ AI ทั้งหมด ยืนยันไหม?")) saveAi(() => "")(e); };

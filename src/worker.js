@@ -192,7 +192,7 @@ async function status(env) {
   }
   const pending = counts.reduce((a, c) => a + (c.pending || 0), 0);
   return { ...shared, portfolios, pending, last_run: lastRun,
-           can_run: Boolean(env.GH_TOKEN && env.AGENT_REPO), live_quotes: Boolean(await finnhubKey(env)),
+           can_run: Boolean(env.AGENT_REPO && (await ghToken(env))), live_quotes: Boolean(await finnhubKey(env)),
            ai_enabled: Boolean(await getSecret(env, 'anthropic')), password_env: Boolean(env.APP_PASSWORD) };
 }
 async function packet(env, id) {
@@ -252,19 +252,43 @@ async function saveSettings(req, env) {
     await putDoc(env, 'secrets', 'anthropic', k ? { enc: await encrypt(env, k) } : {});
     await logStmt(env, 'owner', k ? 'ตั้ง Anthropic key (เว็บ) — เปิดเอเจนต์ AI' : 'ลบ Anthropic key (เว็บ) — ปิดเอเจนต์ AI').run();
   }
+  if (typeof body.github_token === 'string') {
+    const k = body.github_token.trim();
+    if (k) {
+      if (!/^(github_pat_[A-Za-z0-9_]{20,255}|ghp_[A-Za-z0-9]{30,255})$/.test(k)) return json({ error: 'รูปแบบ GitHub token ไม่ถูกต้อง (ขึ้นต้น github_pat_ หรือ ghp_)' }, 400);
+      const t = await gh(env, k, '/actions/workflows/agents.yml');   // ทดสอบก่อนเก็บ: ต้องเห็น workflow ของ repo นี้
+      if (!t.ok) return json({ error: `token ใช้กับ ${env.AGENT_REPO} ไม่ได้ (GitHub ตอบ ${t.status}) — เช็คว่าเลือก repo นี้และให้สิทธิ์ Actions` }, 400);
+    }
+    await putDoc(env, 'secrets', 'github', k ? { enc: await encrypt(env, k) } : {});
+    await logStmt(env, 'owner', k ? 'ตั้ง GitHub token (เว็บ) — สั่งรันเอเจนต์จากเว็บได้' : 'ลบ GitHub token (เว็บ)').run();
+  }
   return json({ ok: true });
 }
 
 // ---------- สั่งรันเอเจนต์ (GitHub Actions) ----------
+const ghToken = async env => env.GH_TOKEN || (await getSecret(env, 'github'));
+const gh = (env, token, path, init = {}) => fetch(`https://api.github.com/repos/${env.AGENT_REPO}${path}`, {
+  ...init, headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'user-agent': 'us-stock-agent', 'x-github-api-version': '2022-11-28' } });
+
+async function runStatus(env) {
+  const token = await ghToken(env);
+  if (!token || !env.AGENT_REPO) return json({ enabled: false, runs: [] });
+  const r = await gh(env, token, '/actions/workflows/agents.yml/runs?per_page=5');
+  if (!r.ok) return json({ enabled: true, error: `GitHub ตอบ ${r.status}`, runs: [] });
+  const d = await r.json();
+  return json({ enabled: true, runs: (d.workflow_runs || []).map(x => ({ id: x.id, status: x.status, conclusion: x.conclusion,
+    event: x.event, created: x.created_at, updated: x.updated_at, url: x.html_url })) });
+}
+
 async function runAgents(req, env) {
-  if (!env.GH_TOKEN || !env.AGENT_REPO) return json({ error: 'ยังไม่ได้ตั้ง GH_TOKEN' }, 400);
+  const token = await ghToken(env);
+  if (!token || !env.AGENT_REPO) return json({ error: 'ยังไม่ได้ใส่ GitHub token (แท็บตั้งค่า)' }, 400);
   const body = await req.json().catch(() => ({}));
   const mode = ['daily', 'weekly', 'backtest'].includes(body.mode) ? body.mode : 'daily';
-  const r = await fetch(`https://api.github.com/repos/${env.AGENT_REPO}/actions/workflows/agents.yml/dispatches`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${env.GH_TOKEN}`, accept: 'application/vnd.github+json', 'user-agent': 'us-stock-agent' },
-    body: JSON.stringify({ ref: 'main', inputs: { mode } }),
-  });
+  const busy = await gh(env, token, '/actions/workflows/agents.yml/runs?per_page=1&status=in_progress');
+  if (busy.ok && ((await busy.json()).total_count || 0) > 0) return json({ error: 'มีรอบที่กำลังรันอยู่ รอให้เสร็จก่อน' }, 409);
+  const r = await gh(env, token, '/actions/workflows/agents.yml/dispatches', {
+    method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { mode } }) });
   if (!r.ok) return json({ error: `GitHub ตอบ ${r.status}` }, 502);
   await logStmt(env, 'owner', `สั่งรันเอเจนต์โหมด ${mode} (เว็บ)`).run();
   return json({ ok: true, mode });
@@ -331,6 +355,7 @@ export default {
         if (p === '/api/packets') return json(await all(env, 'SELECT id, portfolio, created, signal_date, status FROM packets ORDER BY id DESC LIMIT 120'));
         const m = p.match(/^\/api\/packets\/(\d+)$/);
         if (m) { const pk = await packet(env, Number(m[1])); return pk ? json(pk) : json({ error: 'ไม่พบแพ็กเกจ' }, 404); }
+        if (p === '/api/run/status') return runStatus(env);
         if (p === '/api/backtest') {
           const rows = await all(env, 'SELECT portfolio, id, created, source, data FROM backtests WHERE id IN (SELECT MAX(id) FROM backtests GROUP BY portfolio)');
           return json(Object.fromEntries(rows.map(b => [b.portfolio, { ...b, data: JSON.parse(b.data) }])));
