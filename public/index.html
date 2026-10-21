@@ -42,6 +42,10 @@
   td.l,th.l{text-align:left} td.wrap{white-space:normal;text-align:left;min-width:220px}
   .scroll{overflow:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .holdGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+  .holdGrid .col{border:1px solid var(--line);border-radius:6px;padding:10px;min-width:0}
+  .holdGrid .ln{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2px 0}
+  .holdGrid .nm{color:var(--mute);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;margin-left:6px}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px} @media(max-width:900px){.grid2{grid-template-columns:1fr}}
   .report{white-space:pre-wrap;font-size:14px;line-height:1.7}
   .alert{border:1px solid var(--warn);color:var(--warn);background:rgba(242,184,75,.07);border-radius:8px;padding:10px 14px;font-size:13px}
@@ -101,6 +105,8 @@
   </div>
   <div class="panel"><h2>เปรียบเทียบ</h2><div class="scroll"><table id="cmpTbl" class="mono"></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">ทุกพอร์ตใช้ Risk Manager, ข่าว และมหภาคชุดเดียวกัน ต่างกันแค่วิธีเลือกสินทรัพย์ · AI Pick ไม่มี backtest เพราะ Claude รู้อดีตอยู่แล้ว</div></div>
+  <div class="panel"><h2>แต่ละกลยุทธ์ถืออะไร</h2><div id="holdGrid" class="holdGrid"></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">% = สัดส่วนของพอร์ต · ถ้ายังไม่มีของในพอร์ต จะแสดงพอร์ตเป้าหมายจากแพ็กเกจล่าสุดแทน</div></div>
   <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">ข่าวหุ้น <span class="muted" id="newsMeta"></span></h2>
       <div class="row" style="gap:6px"><select id="newsSel"><option value="2">เฉพาะข่าวสำคัญ</option><option value="1">ทุกข่าว</option></select>
         <select id="newsN"><option value="5">แสดง 5 ตัว</option><option value="10">แสดง 10 ตัว</option><option value="20">แสดง 20 ตัว</option><option value="999">แสดงทั้งหมด</option></select>
@@ -143,6 +149,12 @@
   <div class="grid2">
     <div class="panel"><h2>เทียบช่วง</h2><table id="btCmp" class="mono"></table></div>
     <div class="panel"><h2>รายปี (%)</h2><div class="scroll" style="max-height:320px"><table id="btYear" class="mono"></table></div></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">ถืออะไร ณ วันที่</h2><select id="btDate"></select></div>
+      <div class="scroll" style="margin-top:8px"><table id="btHold" class="mono"></table></div><div id="btHoldNote" class="muted" style="font-size:12px;margin-top:6px"></div></div>
+    <div class="panel"><h2>ถือบ่อยที่สุดตลอด backtest</h2><div class="scroll" style="max-height:340px"><table id="btFreq" class="mono"></table></div>
+      <div class="muted" style="font-size:12px;margin-top:6px">% ของเวลาทั้งหมดที่มีตัวนี้อยู่ในพอร์ต · น้ำหนักเฉลี่ยคิดเฉพาะช่วงที่ถือ</div></div>
   </div>
   <div class="panel" id="robPanel"><h2>ความทนทาน (ปรับพารามิเตอร์รอบค่าตั้งต้น)</h2><table id="robTbl" class="mono"></table>
     <div class="muted" style="font-size:12px;margin-top:8px">ทุกแถวควรได้ผลไปทางเดียวกัน ถ้าแถวไหนแย่กว่าแถวอื่นมาก แปลว่ากลยุทธ์ไวต่อตัวเลขเกินไป (overfit)</div></div>
@@ -302,9 +314,28 @@ function render(){
       return `<tr><td class="l mono">${p.ticker}</td><td class="l muted">${KIND[UNI[p.ticker]]||""}</td><td class="mono">${fmt(p.shares,4)}</td><td class="mono">${fmt(p.price)}</td><td class="mono ${cls(p.day)}">${p.day==null?"—":pct(p.day,2)}</td><td class="mono">${fmt(p.value)}</td><td class="mono">${fmt(p.value/t.total*100,1)}%</td><td class="mono">${fmt(p.cost_usd)}</td><td class="mono ${cls(pl)}">${pct(pl,2)}</td></tr>`; }).join("")
       : `<tr><td class="l muted" colspan="9">ยังไม่มี — รอแพ็กเกจแล้วอนุมัติออเดอร์</td></tr>`);
   renderNews();
+  renderHold();
 }
 $("posSel").onchange = e => { posPort = e.target.value; render(); };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ETFN = {SPY:"S&P 500",QQQ:"Nasdaq 100",IWM:"หุ้นเล็กสหรัฐ",EFA:"หุ้นประเทศพัฒนาแล้ว",EEM:"ตลาดเกิดใหม่",XLK:"กลุ่มเทค",XLV:"กลุ่มสุขภาพ",XLF:"กลุ่มการเงิน",XLE:"กลุ่มพลังงาน",XLI:"กลุ่มอุตสาหกรรม",XLP:"สินค้าจำเป็น",XLU:"สาธารณูปโภค",XLY:"สินค้าฟุ่มเฟือย",TLT:"พันธบัตร 20 ปี",IEF:"พันธบัตร 7–10 ปี",GLD:"ทองคำ",SHY:"พันธบัตรสั้น (แทนเงินสด)"};
+const nameOf = t => ETFN[t] || (S && S.names || {})[t] || "";
+function renderHold(){
+  $("holdGrid").innerHTML = PORT_KEYS.map(k => {
+    const t = portTotal(k), P = PF(k), lp = P.last_packet, oo = P.open_orders || [];
+    let rows, note = "";
+    if (t.rows.length){
+      rows = t.rows.map(r => [r.ticker, r.value / t.total]).concat([["เงินสด", (P.cash||0) / t.total]]);
+    } else if (lp && lp.target){
+      rows = Object.entries(lp.target);
+      note = `<div class="muted" style="font-size:12px;margin-bottom:4px">ยังไม่มีของ · เป้าหมายจากแพ็กเกจ #${lp.id} (${oo.some(o=>o.status==="approved") ? "อนุมัติแล้ว รอเทรด" : oo.length ? "รออนุมัติ" : ST[lp.status]||lp.status})</div>`;
+    } else rows = [["เงินสด", 1]];
+    rows.sort((a,b) => b[1]-a[1]);
+    const wait = t.rows.length && oo.length ? `<div style="font-size:12px;margin-top:6px"><span class="badge warn">${oo.some(o=>o.status==="approved")?"รอเทรด":"รออนุมัติ"}</span> ${oo.map(o => `${o.side==="BUY"?"ซื้อ":"ขาย"} ${esc(o.ticker)}`).join(", ")}</div>` : "";
+    return `<div class="col" style="border-top:3px solid ${PORTS[k][1]}"><div style="font-weight:500;margin-bottom:6px">${PORTS[k][0]}</div>${note}
+      ${rows.map(([tk,w]) => `<div class="ln"><span class="mono">${esc(tk)}</span><span class="nm">${esc(tk==="เงินสด"?"":nameOf(tk))}</span><span class="mono">${fmt(w*100,1)}%</span></div>`).join("")}${wait}</div>`;
+  }).join("");
+}
 const NTYPE = {product:"สินค้าใหม่",earnings:"งบ",deal:"ดีล/สัญญา",regulatory:"กฎหมาย/คดี",management:"ผู้บริหาร",analyst:"นักวิเคราะห์",other:"อื่นๆ"};
 const pref = (k, v) => { try{ if (v === undefined) return localStorage.getItem("usa_" + k); localStorage.setItem("usa_" + k, v); }catch(e){ return null; } };
 let newsMore = 0;
@@ -455,7 +486,23 @@ function showBt(){
   const row = (n, x) => `<tr><td class="l">${n}</td><td>${fmt(x.cagr)}%</td><td>${fmt(x.max_dd)}%</td><td>${fmt(x.sharpe)}</td></tr>`;
   $("btCmp").innerHTML = `<tr><th class="l">ช่วง</th><th>ต่อปี</th><th>Max DD</th><th>Sharpe</th></tr>` + row("ทั้งหมด", S_) + row("70% แรก", s.in_sample) + row("30% หลัง", s.out_sample) + row("SPY 30% หลัง", s.bench_out_sample);
   $("btYear").innerHTML = `<tr><th class="l">ปี</th><th>กลยุทธ์</th><th>SPY</th><th>ต่าง</th></tr>` + s.by_year.slice().reverse().map(y => `<tr><td class="l">${y.year}</td><td class="${cls(y.ret)}">${fmt(y.ret)}</td><td>${fmt(y.bench)}</td><td class="${cls(y.ret-y.bench)}">${fmt(y.ret-y.bench)}</td></tr>`).join("");
+  renderBtHold(r);
   $("robTbl").innerHTML = `<tr><th>ถือกี่ตัว</th><th>เส้นเทรนด์</th><th>ต่อปี</th><th>Max DD</th><th>Sharpe</th><th>30% หลัง ต่อปี</th></tr>` + (r.robustness||[]).map(x => `<tr><td>${x.top_n}</td><td>${x.trend_sma}</td><td class="${cls(x.cagr)}">${fmt(x.cagr)}%</td><td>${fmt(x.max_dd)}%</td><td>${fmt(x.sharpe)}</td><td class="${cls(x.out_cagr)}">${fmt(x.out_cagr)}%</td></tr>`).join("");
+}
+
+function renderBtHold(r){
+  const h = r.history || (r.last_weights ? [{d: r.last_weights.date, r: r.last_weights.regime, w: r.last_weights.weights}] : []);
+  $("btHoldNote").textContent = r.history ? `พอร์ตเปลี่ยน ${h.length} ครั้งตลอด backtest · น้ำหนักเป้าหมาย ณ วันศุกร์ที่ส่งสัญญาณ` : "ผลนี้รันก่อนมีการเก็บประวัติ — กดรัน Backtest ใหม่เพื่อดูทุกช่วง";
+  const REGT = {risk_on:"ขาขึ้น",caution:"ระวัง",risk_off:"ขาลง"};
+  $("btDate").innerHTML = h.map((x,i) => `<option value="${i}">${x.d} · ${REGT[x.r]||""}</option>`).reverse().join("");
+  const show = () => { const x = h[+$("btDate").value]; if (!x){ $("btHold").innerHTML = ""; return; }
+    $("btHold").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">ชื่อ</th><th>น้ำหนัก</th></tr>` + Object.entries(x.w).sort((a,b)=>b[1]-a[1]).map(([t,w]) => `<tr><td class="l">${esc(t)}</td><td class="l muted" style="font-family:inherit">${esc(nameOf(t))}</td><td>${fmt(w*100,1)}%</td></tr>`).join(""); };
+  $("btDate").onchange = show; show();
+  const end = new Date(r.equity.length ? r.equity[r.equity.length-1].time : Date.now()), tot = {}, wsum = {};
+  let all = 0;
+  h.forEach((x,i) => { const days = ((i+1 < h.length ? new Date(h[i+1].d) : end) - new Date(x.d)) / 864e5; all += days;
+    for (const [t,w] of Object.entries(x.w)){ tot[t] = (tot[t]||0) + days; wsum[t] = (wsum[t]||0) + w*days; } });
+  $("btFreq").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">ชื่อ</th><th>% ของเวลา</th><th>น้ำหนักเฉลี่ย</th></tr>` + Object.keys(tot).sort((a,b)=>tot[b]-tot[a]).slice(0,25).map(t => `<tr><td class="l">${esc(t)}</td><td class="l muted" style="font-family:inherit">${esc(nameOf(t))}</td><td>${fmt(all ? tot[t]/all*100 : 0,0)}%</td><td>${fmt(wsum[t]/tot[t]*100,1)}%</td></tr>`).join("");
 }
 
 // ---------- Journal

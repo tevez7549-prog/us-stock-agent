@@ -320,6 +320,17 @@ def resume():
     paper.log("owner", "กลับมาทำงานต่อ", shared=True)
 
 
+def _holdings_history(log):
+    """ประวัติการถือใน backtest (เก็บเฉพาะรอบที่พอร์ตเปลี่ยน) ให้เว็บแสดงว่าแต่ละช่วงถือตัวไหน"""
+    out, prev = [], None
+    for x in log:
+        w = {t: round(float(v), 3) for t, v in x["weights"].items() if v >= 0.005}
+        if prev is None or set(w) != set(prev) or max(abs(w[t] - prev[t]) for t in w) > 0.02:
+            out.append({"d": x["date"], "r": x["regime"], "w": w})
+            prev = w
+    return out
+
+
 def publish_backtest(d):
     """backtest 3 กลยุทธ์โค้ด (AI Pick ทดสอบย้อนหลังไม่ได้ เพราะ Claude รู้อนาคต) + ความทนทานของ Momentum"""
     from agents import backtest_agent
@@ -330,7 +341,8 @@ def publish_backtest(d):
             continue
         res = backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"], portfolio=name)
         o = {"stats": res["stats"], "params": res["params"], "equity": wk(res["equity"]), "bench": wk(res["bench"]),
-             "last_weights": res["weights_log"][-1] if res["weights_log"] else None}
+             "last_weights": res["weights_log"][-1] if res["weights_log"] else None,
+             "history": _holdings_history(res["weights_log"])}
         if name == "momentum":
             o["robustness"] = backtest_agent.robustness(d)
         with paper.portfolio(name):

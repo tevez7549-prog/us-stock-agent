@@ -182,13 +182,16 @@ async function status(env) {
   const positions = await all(env, 'SELECT portfolio, ticker, shares, cost_usd FROM positions WHERE shares > 1e-9');
   const equity = await all(env, 'SELECT portfolio, date, usd, thb, bench_usd FROM equity ORDER BY date');
   const counts = await all(env, "SELECT portfolio, SUM(status IN ('proposed','held')) pending, SUM(status='approved') approved FROM orders GROUP BY portfolio");
-  const lastPk = await all(env, "SELECT portfolio, id, signal_date, status FROM packets WHERE id IN (SELECT MAX(id) FROM packets GROUP BY portfolio)");
+  const lastPk = await all(env, "SELECT portfolio, id, signal_date, status, json_extract(data, '$.target') target FROM packets WHERE id IN (SELECT MAX(id) FROM packets GROUP BY portfolio)");
+  for (const x of lastPk) x.target = x.target ? JSON.parse(x.target) : null;
+  const open = await all(env, "SELECT portfolio, ticker, side, status FROM orders WHERE status IN ('proposed','approved','held')");
   const lastRun = await first(env, "SELECT time, event FROM journal WHERE agent IN ('orchestrator','data') ORDER BY id DESC LIMIT 1");
   const portfolios = {};
   for (const p of PORTFOLIOS) {
     const c = counts.find(x => x.portfolio === p) || {};
     portfolios[p] = { ...(per[p] || {}), positions: positions.filter(x => x.portfolio === p), equity: equity.filter(x => x.portfolio === p),
-                      pending: c.pending || 0, approved: c.approved || 0, last_packet: lastPk.find(x => x.portfolio === p) || null };
+                      pending: c.pending || 0, approved: c.approved || 0, last_packet: lastPk.find(x => x.portfolio === p) || null,
+                      open_orders: open.filter(x => x.portfolio === p) };
   }
   const pending = counts.reduce((a, c) => a + (c.pending || 0), 0);
   return { ...shared, portfolios, pending, last_run: lastRun,
