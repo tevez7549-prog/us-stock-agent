@@ -4,7 +4,14 @@
 import config
 
 
-def apply(weights, drawdown=0.0, blocked=(), r=config.RISK):
+def rules_for(portfolio, r=config.RISK):
+    """กฎของพอร์ตนั้น = กฎกลาง + ค่าเฉพาะกลยุทธ์ (ถ้ามี) · หุ้นรายตัวใช้เพดานเดียวกันทุกพอร์ต"""
+    over = r.get("per_strategy", {}).get(portfolio or "", {})
+    return {**{k: v for k, v in r.items() if k != "per_strategy"}, **over}
+
+
+def apply(weights, drawdown=0.0, blocked=(), r=config.RISK, portfolio=None):
+    r = rules_for(portfolio, r) if "per_strategy" in r else r
     w = dict(weights)
     log = []
     cash = config.CASH_PROXY
@@ -67,8 +74,9 @@ def apply(weights, drawdown=0.0, blocked=(), r=config.RISK):
     return {"weights": {t: round(float(v), 4) for t, v in w.items()}, "log": log}
 
 
-def check(weights, r=config.RISK):
+def check(weights, r=config.RISK, portfolio=None):
     """ตรวจซ้ำแบบอิสระ (ใช้โดยผู้ตรวจสอบ) — คืนรายการที่ผิดกฎ"""
+    r = rules_for(portfolio, r) if "per_strategy" in r else r
     bad = []
     tol = 1e-3
     if abs(sum(weights.values()) - 1) > 0.01:

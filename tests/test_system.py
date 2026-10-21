@@ -26,7 +26,7 @@ def null_test():
         res = []
         for seed in range(4):
             d = data_agent.clean(data_agent.synthetic(seed=seed, drift=False))
-            res.append(backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"])["stats"]["strategy"]["cagr"])
+            res.append(backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"], portfolio=name)["stats"]["strategy"]["cagr"])
         avg = float(np.mean(res))
         print(f"[1] Null {name:14s} CAGR บนข้อมูลสุ่ม: {res} เฉลี่ย {avg:.2f}%")
         assert avg < 1.5, f"{name}: ข้อมูลสุ่มไม่ควรทำกำไรได้"
@@ -49,8 +49,8 @@ def lookahead_test():
 def risk_test():
     d = data_agent.clean(data_agent.synthetic(seed=5))
     for name, meta in CODE.items():
-        log = backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"])["weights_log"]
-        bad = [(w["date"], risk_agent.check(w["weights"])) for w in log if risk_agent.check(w["weights"])]
+        log = backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"], portfolio=name)["weights_log"]
+        bad = [(w["date"], risk_agent.check(w["weights"], portfolio=name)) for w in log if risk_agent.check(w["weights"], portfolio=name)]
         print(f"[3] Risk {name:14s} ตรวจ {len(log)} รอบ ผิดกฎ {len(bad)} ครั้ง")
         assert not bad, bad[:3]
 
@@ -66,7 +66,7 @@ def consistency_test(weeks=40):
     for name, meta in CODE.items():
         fw = pd.Series({pd.Timestamp(r["date"]): r["usd"] for r in
                         paper.conn().execute("SELECT date, usd FROM equity WHERE portfolio=? ORDER BY date", (name,))})
-        bt = backtest_agent.run(sub, strategy_module=meta["module"], cadence=meta["cadence"])["equity"].reindex(fw.index)
+        bt = backtest_agent.run(sub, strategy_module=meta["module"], cadence=meta["cadence"], portfolio=name)["equity"].reindex(fw.index)
         fr, br = fw.iloc[-1] / fw.iloc[0] - 1, bt.iloc[-1] / bt.iloc[0] - 1
         tol = 0.01
         print(f"[4] Consistency {name:14s} forward {fr:+.2%} vs backtest {br:+.2%} (ต่าง {abs(fr - br):.2%})")

@@ -23,7 +23,7 @@ def signal_dates(index, start_pos, cadence="weekly"):
     return set(last)
 
 
-def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_USD, strategy_module=momentum, cadence="weekly"):
+def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_USD, strategy_module=momentum, cadence="weekly", portfolio=None):
     p = {**config.STRATEGY, **(strategy or {})}
     r = {**config.RISK, **(risk or {})}
     c = {**config.COSTS, **(costs or {})}
@@ -90,7 +90,7 @@ def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_US
             held = [tickers[j] for j in np.nonzero(sh > 1e-9)[0]]
             prop = strategy_module.propose(close, ind, date, reg, p, held)
             dd = 1 - equity / peak
-            fin = risk_agent.apply(prop["weights"], drawdown=dd, r=r)
+            fin = risk_agent.apply(prop["weights"], drawdown=dd, r=r, portfolio=portfolio)
             pending = fin["weights"]
             weights_log.append({"date": str(date.date()), "regime": reg["regime"],
                                 "exposure": reg["exposure"], "weights": fin["weights"]})

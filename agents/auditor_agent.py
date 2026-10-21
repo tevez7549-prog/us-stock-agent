@@ -25,7 +25,7 @@ def audit(packet, d, quality):
         warns.append(f"ข้อมูลมีข้อสังเกต {len(quality['issues'])} จุด")
 
     # 2) พอร์ตเป้าหมายผ่านกฎความเสี่ยงไหม (ตรวจอิสระ)
-    for b in risk_agent.check(packet["target"]):
+    for b in risk_agent.check(packet["target"], portfolio=packet.get("portfolio")):
         fails.append("ผิดกฎความเสี่ยง: " + b)
 
     # 3) คำนวณสัญญาณซ้ำจากข้อมูลดิบ ต้องได้ผลเท่ากัน (จับบั๊กหรือการแก้ตัวเลขระหว่างทาง)
@@ -41,7 +41,7 @@ def audit(packet, d, quality):
             reg["exposure"] = round(reg["exposure"] * packet["macro"]["factor"], 3)
         again = meta["module"].propose(close, ind, date, reg, held=packet.get("held_risky", []))
         again = risk_agent.apply(again["weights"], drawdown=packet.get("drawdown", 0),
-                                 blocked=packet.get("news", {}).get("blocked", []))["weights"]
+                                 blocked=packet.get("news", {}).get("blocked", []), portfolio=packet.get("portfolio"))["weights"]
         diff = {t: abs(again.get(t, 0) - packet["target"].get(t, 0)) for t in set(again) | set(packet["target"])}
         worst = max(diff.values(), default=0)
         if worst > 0.005:

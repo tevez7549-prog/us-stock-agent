@@ -181,7 +181,7 @@ def _weekly_one(d, ctx, as_of):
     with paper.conn() as c:
         peak = c.execute("SELECT MAX(usd) m FROM equity WHERE portfolio=?", (P,)).fetchone()["m"] or equity
     dd = max(0.0, 1 - equity / peak)
-    fin = risk_agent.apply(prop["weights"], drawdown=dd, blocked=news.get("blocked", []))
+    fin = risk_agent.apply(prop["weights"], drawdown=dd, blocked=news.get("blocked", []), portfolio=P)
     target = fin["weights"]
     rank = {r["ticker"]: r["rank"] for r in prop["ranking"]}
 
@@ -287,7 +287,7 @@ def publish_backtest(d):
     for name, meta in PORTFOLIOS.items():
         if meta["uses_ai"]:
             continue
-        res = backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"])
+        res = backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"], portfolio=name)
         o = {"stats": res["stats"], "params": res["params"], "equity": wk(res["equity"]), "bench": wk(res["bench"]),
              "last_weights": res["weights_log"][-1] if res["weights_log"] else None}
         if name == "momentum":
