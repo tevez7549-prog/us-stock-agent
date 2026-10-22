@@ -341,28 +341,33 @@ async function agentSecret(req, env, url) {
 }
 
 // ---------- ตัวเฝ้าระวังตารางเวลา (Cloudflare Cron) ----------
-// GitHub Actions แบบตั้งเวลาเลื่อน/ข้ามได้ (ช่วงคนใช้เยอะ) → Worker เช็คทุก 30 นาทีช่วง 06:00–10:59 ไทย
-// ถ้าถึงเวลาแล้วยังไม่มีบันทึกว่ารัน และไม่มีรอบที่กำลังรัน/รอคิว → สั่งรันแทน (วันละไม่เกิน 1 ครั้งต่อโหมด)
+// GitHub Actions แบบตั้งเวลาไม่เคยรันจริง และ Yahoo ปล่อยราคาปิดของวันก่อนช้า (ยังไม่มีตอน 08:00 ไทย, มีแล้วราว 10:00)
+// → Worker เช็คทุก 30 นาทีช่วง 06:00–11:59 ไทย: ถ้าถึงเวลาแล้วยังไม่มีรอบที่ได้ "ราคาปิดของเมื่อวาน (เวลา NY)"
+//   และไม่มีรอบกำลังรัน/รอคิว → สั่งรันแทน (ช่วงละไม่เกิน 1 ครั้งต่อโหมด)
+// รายวัน: อังคาร–เสาร์ ตั้งแต่ 10:20 · รายสัปดาห์: เสาร์ ตั้งแต่ 11:00 (ต้องได้ราคาปิดวันศุกร์ก่อนสร้างแพ็กเกจ)
 async function watchdog(env) {
   const now = nowIso(), today = now.slice(0, 10), hm = now.slice(11, 16);
   const dow = new Date(today + 'T00:00:00Z').getUTCDay();          // 0=อาทิตย์ ... 6=เสาร์ (วันไทย)
+  const expected = new Date(Date.parse(today + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10);  // วันซื้อขาย NY ล่าสุด
   const due = [];
-  if (dow === 6 && hm >= '09:20') due.push(['weekly', "agent='orchestrator' AND event='เริ่มรอบรายสัปดาห์'", `${today}T09:00:00`]);
-  if (dow >= 2 && dow <= 6 && hm >= '06:50') due.push(['daily', "agent='data'", `${today}T06:00:00`]);
+  if (dow === 6 && hm >= '11:00')
+    due.push(['weekly', "agent='orchestrator' AND event='เริ่มรอบรายสัปดาห์' AND json_extract(detail,'$.data') >= ?", `${today}T10:30:00`]);
+  if (dow >= 2 && dow <= 6 && hm >= '10:20')
+    due.push(['daily', "agent='data' AND json_extract(detail,'$.last') >= ?", `${today}T10:00:00`]);
   if (!due.length) return;
   const token = await ghToken(env);
   if (!token || !env.AGENT_REPO) return;
   for (const [mode, cond, since] of due) {
-    const ran = await first(env, `SELECT COUNT(*) n FROM journal WHERE ${cond} AND time >= ?`, since);
+    const ran = await first(env, `SELECT COUNT(*) n FROM journal WHERE ${cond} AND time >= ?`, expected, `${today}T00:00:00`);
     if (ran.n) continue;
-    const tried = await first(env, "SELECT COUNT(*) n FROM journal WHERE agent='system' AND event=? AND time >= ?", `watchdog: สั่งรัน ${mode}`, `${today}T00:00:00`);
+    const tried = await first(env, "SELECT COUNT(*) n FROM journal WHERE agent='system' AND event=? AND time >= ?", `watchdog: สั่งรัน ${mode}`, since);
     if (tried.n) continue;
     for (const st of ['in_progress', 'queued']) {
       const r = await gh(env, token, `/actions/workflows/agents.yml/runs?per_page=1&status=${st}`);
       if (r.ok && ((await r.json()).total_count || 0) > 0) return;   // มีรอบกำลังทำอยู่ รอรอบเช็คถัดไป
     }
     const r = await gh(env, token, '/actions/workflows/agents.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { mode } }) });
-    await logStmt(env, 'system', `watchdog: สั่งรัน ${mode}`, { reason: 'GitHub ไม่ได้รันตามเวลา', github_status: r.status }).run();
+    await logStmt(env, 'system', `watchdog: สั่งรัน ${mode}`, { reason: `ยังไม่มีรอบที่ได้ราคาปิด ${expected}`, github_status: r.status }).run();
     return;   // ครั้งละโหมดเดียว (weekly รันรายวันให้ด้วยอยู่แล้ว)
   }
 }

@@ -1,9 +1,8 @@
 name: agents
 
 on:
-  schedule:
-    - cron: "30 23 * * 1-5"   # อังคาร–เสาร์ 06:30 เวลาไทย (หลังตลาดสหรัฐปิด) → daily
-    - cron: "0 2 * * 6"       # เสาร์ 09:00 เวลาไทย → weekly (สร้างแพ็กเกจ) + backtest
+  # ไม่ใช้ schedule ของ GitHub (ไม่เคยรันตามเวลา และ 06:30 ไทย Yahoo ยังไม่มีราคาปิด)
+  # ตัวเฝ้าระวังบน Cloudflare Worker (cron) สั่งรันแทน: รายวัน อังคาร–เสาร์ ~10:30, รายสัปดาห์ เสาร์ ~11:00
   workflow_dispatch:
     inputs:
       mode:

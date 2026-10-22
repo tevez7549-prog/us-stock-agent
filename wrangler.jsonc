@@ -9,7 +9,7 @@
   // เอเจนต์บน GitHub Actions ยืนยันตัวด้วย OIDC token ของ repo นี้ (ไม่ต้องเก็บ secret ใน GitHub)
   "vars": { "AGENT_REPO": "tevez7549-prog/us-stock-agent" },
   // run near Singapore: Claude API refuses requests from some Cloudflare locations (e.g. Hong Kong)
-  // ตัวเฝ้าระวัง: ทุก 30 นาที 06:00–10:59 เวลาไทย (23:00–03:59 UTC) ถ้า GitHub ไม่รันตามเวลา Worker สั่งรันแทน
-  "triggers": { "crons": ["*/30 23,0,1,2,3 * * *"] },
+  // ตัวเฝ้าระวัง: ทุก 30 นาที 06:00–11:59 เวลาไทย (23:00–04:59 UTC) สั่งรันรายวัน/รายสัปดาห์เมื่อราคาปิดพร้อม
+  "triggers": { "crons": ["*/30 23,0,1,2,3,4 * * *"] },
   "placement": { "region": "aws:ap-southeast-1" }
 }
