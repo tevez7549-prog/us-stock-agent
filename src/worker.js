@@ -321,6 +321,47 @@ async function quotes(url, env, ctx) {
   return json({ enabled: true, quotes: out, fetched: new Date().toISOString() });
 }
 
+// ---------- มูลค่าระหว่างวัน (Cloudflare Cron ทุก 15 นาที ช่วงตลาดสหรัฐเปิด) ----------
+// ราคาสดจาก Finnhub × จำนวนหุ้นที่ถือ + เงินสด → ตาราง intraday ให้กราฟ "ระหว่างวัน" (เก็บ 10 วัน)
+// แค่บันทึกให้ดู ไม่มีผลกับการซื้อขาย (ราคาปิดอย่างเป็นทางการยังมาจากรอบรายวันเหมือนเดิม)
+function nyClock(t = new Date(Date.now())) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false })
+    .formatToParts(t).map(x => [x.type, x.value]));
+  return { weekday: p.weekday, min: (Number(p.hour) % 24) * 60 + Number(p.minute) };
+}
+async function snapshot(env) {
+  const ny = nyClock();
+  if (['Sat', 'Sun'].includes(ny.weekday) || ny.min < 570 || ny.min > 965) return;   // 09:30–16:05 NY
+  const key = await finnhubKey(env);
+  if (!key) return;
+  const pos = await all(env, 'SELECT portfolio, ticker, shares FROM positions WHERE shares > 1e-9');
+  const st = await all(env, "SELECT portfolio, key, value FROM state WHERE key IN ('cash','bench_start','capital','last_prices')");
+  const get = (p, k) => { const r = st.find(x => x.portfolio === p && x.key === k); return r ? JSON.parse(r.value) : null; };
+  const last = get('', 'last_prices') || {};
+  const syms = [...new Set(['SPY', ...pos.map(x => x.ticker)])].slice(0, 40);
+  const px = {};
+  await Promise.all(syms.map(async s => {
+    try {
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s.replace('-', '.'))}&token=${key}`);
+      const q = r.ok ? await r.json() : null;
+      if (q && q.c) px[s] = q.c;
+    } catch (e) { /* ตัวที่ดึงไม่ได้ใช้ราคาปิดล่าสุด */ }
+  }));
+  if (!px.SPY) return;
+  const ts = new Date(Math.floor(Date.now() / 9e5) * 9e5).toISOString().slice(0, 16) + 'Z';   // ปัดเป็นช่วง 15 นาที (UTC)
+  const stmts = [];
+  for (const p of PORTFOLIOS) {
+    const cash = get(p, 'cash');
+    if (cash == null) continue;
+    const usd = cash + pos.filter(x => x.portfolio === p).reduce((a, x) => a + x.shares * (px[x.ticker] || last[x.ticker] || 0), 0);
+    stmts.push(env.DB.prepare('INSERT OR REPLACE INTO intraday (portfolio, ts, usd) VALUES (?,?,?)').bind(p, ts, usd));
+  }
+  const b0 = get('momentum', 'bench_start'), cap = get('momentum', 'capital');
+  if (b0 && cap) stmts.push(env.DB.prepare("INSERT OR REPLACE INTO intraday (portfolio, ts, usd) VALUES ('SPY',?,?)").bind(ts, cap * (1 - 0.0025) * px.SPY / b0));
+  stmts.push(env.DB.prepare("DELETE FROM intraday WHERE ts < ?").bind(new Date(Date.now() - 10 * 864e5).toISOString().slice(0, 16)));
+  await env.DB.batch(stmts);
+}
+
 // ---------- ช่องสำหรับเอเจนต์ Python ----------
 async function agentSql(req, env) {
   if (!(await agentAuthed(req, env))) return json({ error: 'unauthorized' }, 401);
@@ -373,7 +414,7 @@ async function watchdog(env) {
 }
 
 export default {
-  async scheduled(event, env, ctx) { ctx.waitUntil(watchdog(env)); },
+  async scheduled(event, env, ctx) { ctx.waitUntil(event.cron === '*/15 13-21 * * 1-5' ? snapshot(env) : watchdog(env)); },
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
@@ -398,6 +439,10 @@ export default {
         }
         if (p === '/api/journal') return json(await all(env, 'SELECT * FROM journal ORDER BY id DESC LIMIT 400'));
         if (p === '/api/quotes') return quotes(url, env, ctx);
+        if (p === '/api/intraday') {
+          const days = Math.min(Math.max(Number(url.searchParams.get('days')) || 5, 1), 10);
+          return json(await all(env, 'SELECT portfolio, ts, usd FROM intraday WHERE ts >= ? ORDER BY ts', new Date(Date.now() - days * 864e5).toISOString().slice(0, 16)));
+        }
       }
       if (req.method === 'POST') {
         if (p === '/api/orders/decide') return decide(req, env);

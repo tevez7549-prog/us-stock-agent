@@ -9,3 +9,6 @@ CREATE TABLE IF NOT EXISTS backtests (id INTEGER PRIMARY KEY AUTOINCREMENT, port
 CREATE TABLE IF NOT EXISTS docs (coll TEXT, id TEXT, data TEXT, updated_at TEXT, PRIMARY KEY (coll, id));
 CREATE INDEX IF NOT EXISTS idx_orders_packet ON orders (packet_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (portfolio, status);
+
+-- มูลค่าพอร์ตระหว่างวัน (Worker cron ทุก 15 นาทีตอนตลาดเปิด, เก็บ 10 วัน) portfolio='SPY' = ถือ SPY เฉยๆ
+CREATE TABLE IF NOT EXISTS intraday (portfolio TEXT NOT NULL, ts TEXT NOT NULL, usd REAL NOT NULL, PRIMARY KEY (portfolio, ts));

@@ -93,7 +93,8 @@
   <div class="kpis" id="ovKpi"></div>
   <div class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
-      <h2 style="margin:0">4 กลยุทธ์ vs ถือ SPY เฉยๆ (USD, ราคาปิด, ทุนเริ่มต้นเท่ากัน)</h2>
+      <div class="row" style="gap:8px"><h2 style="margin:0" id="ovTitle">4 กลยุทธ์ vs ถือ SPY เฉยๆ (USD, ทุนเริ่มต้นเท่ากัน)</h2>
+        <select id="ovMode"><option value="intra">ระหว่างวัน (ทุก 15 นาที)</option><option value="daily">รายวัน (ราคาปิด)</option></select></div>
       <div class="row">
         <button id="btnDaily">สั่งรันรายวัน</button>
         <button id="btnWeekly" class="primary">สร้างแพ็กเกจตอนนี้</button>
@@ -102,6 +103,7 @@
     </div>
     <div class="runBox muted" style="font-size:13px;margin:6px 0" hidden></div>
     <div id="ovChart" class="chart"></div>
+    <div id="ovNote" class="muted" style="font-size:12px;margin-top:6px"></div>
   </div>
   <div class="panel"><h2>เปรียบเทียบ</h2><div class="scroll"><table id="cmpTbl" class="mono"></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">ทุกพอร์ตใช้ Risk Manager, ข่าว และมหภาคชุดเดียวกัน ต่างกันแค่วิธีเลือกสินทรัพย์ · AI Pick ไม่มี backtest เพราะ Claude รู้อดีตอยู่แล้ว</div></div>
@@ -280,12 +282,33 @@ async function loadStatus(){
   if (S.pending) w.push(`มี ${S.pending} ออเดอร์รอคุณตัดสินใจ → แท็บ "ตัดสินใจ"`);
   if (!S.ai_enabled) w.push('เอเจนต์ AI ยังปิดอยู่ (ใส่ Anthropic key ในแท็บ "ตั้งค่า") — พอร์ต AI Pick จะถือเงินสดจนกว่าจะเปิด');
   $("ovWarn").hidden = !w.length; $("ovWarn").innerHTML = w.join("<br>");
-  for (const k of PORT_KEYS) ovLines[k].setData(PF(k).equity.map(x => ({time:x.date,value:x.usd})));
-  const be = PORT_KEYS.map(k => PF(k).equity).sort((a,b) => b.length - a.length)[0] || [];
-  ovBench.setData(be.map(x => ({time:x.date,value:x.bench_usd}))); ovChart.timeScale().fitContent();
+  await drawOv();
   fillSel("posSel", PORT_KEYS, k => PORTS[k][0]); $("posSel").value = posPort;
   render();
   refreshQuotes();
+}
+let INTRA = [];
+const ovModeSaved = (() => { try{ return localStorage.getItem("usa_ovmode"); }catch(e){ return null; } })();
+if (ovModeSaved) $("ovMode").value = ovModeSaved;
+$("ovMode").onchange = e => { try{ localStorage.setItem("usa_ovmode", e.target.value); }catch(_){} drawOv(); };
+async function drawOv(){
+  const intra = $("ovMode").value === "intra";
+  ovChart.applyOptions({timeScale:{timeVisible:intra, secondsVisible:false}});
+  if (!intra){
+    for (const k of PORT_KEYS) ovLines[k].setData(PF(k).equity.map(x => ({time:x.date,value:x.usd})));
+    const be = PORT_KEYS.map(k => PF(k).equity).sort((a,b) => b.length - a.length)[0] || [];
+    ovBench.setData(be.map(x => ({time:x.date,value:x.bench_usd})));
+    $("ovNote").textContent = "ราคาปิดรายวัน อัปเดตทุกเช้าราว 10:30";
+  } else {
+    try{ INTRA = await api("/api/intraday?days=5"); }catch(e){ INTRA = []; }
+    const sec = ts => Math.floor(Date.parse(ts) / 1000) + 7 * 3600;   // กราฟแสดงเวลาแบบ UTC → เลื่อนเป็นเวลาไทย
+    for (const k of PORT_KEYS) ovLines[k].setData(INTRA.filter(x => x.portfolio === k).map(x => ({time:sec(x.ts), value:x.usd})));
+    ovBench.setData(INTRA.filter(x => x.portfolio === "SPY").map(x => ({time:sec(x.ts), value:x.usd})));
+    const lastTs = INTRA.length ? INTRA[INTRA.length-1].ts : null;
+    $("ovNote").textContent = lastTs ? `ราคาสดทุก 15 นาทีช่วงตลาดสหรัฐเปิด (ราว 20:30–03:00 น. ไทย) · 5 วันล่าสุด · จุดล่าสุด ${new Date(lastTs).toLocaleString("th-TH",{hour12:false})}`
+      : "ยังไม่มีข้อมูลระหว่างวัน — จะเริ่มบันทึกทุก 15 นาทีเมื่อตลาดสหรัฐเปิด (ราว 20:30 น. ไทย)";
+  }
+  ovChart.timeScale().fitContent();
 }
 function portTotal(k){
   const P = PF(k), px = S.last_prices || {};
@@ -294,7 +317,7 @@ function portTotal(k){
   const total = (P.cash || 0) + rows.reduce((a,r) => a + r.value, 0);
   const e = P.equity, first = e[0], last = e[e.length-1];
   const peak = Math.max(total, ...e.map(x => x.usd));
-  return {rows, total, ret: first ? total/first.usd-1 : 0, bret: first ? last.bench_usd/first.bench_usd-1 : 0, dd: peak ? 1 - total/peak : 0, first};
+  return {rows, total, lastClose: last ? last.usd : null, ret: first ? total/first.usd-1 : 0, bret: first ? last.bench_usd/first.bench_usd-1 : 0, dd: peak ? 1 - total/peak : 0, first};
 }
 function render(){
   if (!S) return;
@@ -304,7 +327,8 @@ function render(){
   const best = PORT_KEYS.slice().sort((a,b) => T[b].ret - T[a].ret)[0];
   $("ovKpi").innerHTML = PORT_KEYS.map(k => { const t = T[k], P = PF(k), reg = REG[P.prev_regime] || ["—",""];
     return `<div class="kpi" style="border-top:3px solid ${PORTS[k][1]}"><div class="k">${PORTS[k][0]}${k===best&&t.first?' <span class="up">★</span>':''}</div><div class="v mono">$${fmt(t.total)}</div>
-      <div class="s"><span class="${cls(t.ret)}">${pct(t.ret,2)}</span> · SPY ${pct(t.bret,2)} · DD ${pct(-t.dd,1)}${P.pending?` · <span class="badge warn">รอ ${P.pending}</span>`:""}</div></div>`; }).join("")
+      <div class="s"><span class="${cls(t.ret)}">${pct(t.ret,2)}</span> · SPY ${pct(t.bret,2)} · DD ${pct(-t.dd,1)}${P.pending?` · <span class="badge warn">รอ ${P.pending}</span>`:""}</div>
+      ${live && t.lastClose ? `<div class="s">วันนี้ <span class="${cls(t.total/t.lastClose-1)}">${pct(t.total/t.lastClose-1,2)}</span> <span class="muted">(สด)</span></div>` : ""}</div>`; }).join("")
     + `<div class="kpi"><div class="k">รวมทุกพอร์ต${live?" (สด)":""}</div><div class="v mono">$${fmt(grand)}</div><div class="s">≈ ฿${fmt(grand*fx,0)} (${fmt(fx,2)} ฿/$)</div></div>`;
   $("cmpTbl").innerHTML = `<tr><th class="l">กลยุทธ์</th><th>มูลค่า $</th><th>ผลตอบแทน</th><th>SPY</th><th>ต่าง</th><th>ลงจากจุดสูงสุด</th><th>เงินสด</th><th>ถือ (ตัว)</th><th class="l">สภาวะ</th><th class="l">แพ็กเกจล่าสุด</th></tr>`
     + PORT_KEYS.map(k => { const t = T[k], P = PF(k), reg = REG[P.prev_regime] || ["—",""], lp = P.last_packet;
@@ -383,6 +407,7 @@ async function refreshQuotes(){
   try{ const q = await api("/api/quotes?symbols=" + syms.join(",")); LIVE = q.quotes || {}; render(); }catch(e){}
 }
 setInterval(() => { if (S && usMarketOpen() && !document.hidden) refreshQuotes(); }, 30000);
+setInterval(() => { if (S && usMarketOpen() && !document.hidden && $("ovMode").value === "intra") drawOv(); }, 5 * 60000);
 
 const MODE_TH = {daily:"รายวัน", weekly:"สร้างแพ็กเกจ + backtest", backtest:"Backtest"};
 let runTimer = null;
