@@ -276,6 +276,7 @@ def _weekly_one(d, ctx, as_of):
 
 
 def weekly(d, as_of=None, portfolios=None):
+    paper.log("orchestrator", "เริ่มรอบรายสัปดาห์", {"data": str(d["close"].index[-1].date())}, shared=True)  # ตัวเฝ้าระวังบน Worker ใช้เช็คว่ารันแล้ว
     daily(d)
     date = d["close"].index[-1]
     ctx = _shared_context(d, date, as_of)

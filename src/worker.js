@@ -340,7 +340,35 @@ async function agentSecret(req, env, url) {
   return json({ error: 'unknown secret' }, 400);   // เอเจนต์อ่านได้เฉพาะ 2 key นี้
 }
 
+// ---------- ตัวเฝ้าระวังตารางเวลา (Cloudflare Cron) ----------
+// GitHub Actions แบบตั้งเวลาเลื่อน/ข้ามได้ (ช่วงคนใช้เยอะ) → Worker เช็คทุก 30 นาทีช่วง 06:00–10:59 ไทย
+// ถ้าถึงเวลาแล้วยังไม่มีบันทึกว่ารัน และไม่มีรอบที่กำลังรัน/รอคิว → สั่งรันแทน (วันละไม่เกิน 1 ครั้งต่อโหมด)
+async function watchdog(env) {
+  const now = nowIso(), today = now.slice(0, 10), hm = now.slice(11, 16);
+  const dow = new Date(today + 'T00:00:00Z').getUTCDay();          // 0=อาทิตย์ ... 6=เสาร์ (วันไทย)
+  const due = [];
+  if (dow === 6 && hm >= '09:20') due.push(['weekly', "agent='orchestrator' AND event='เริ่มรอบรายสัปดาห์'", `${today}T09:00:00`]);
+  if (dow >= 2 && dow <= 6 && hm >= '06:50') due.push(['daily', "agent='data'", `${today}T06:00:00`]);
+  if (!due.length) return;
+  const token = await ghToken(env);
+  if (!token || !env.AGENT_REPO) return;
+  for (const [mode, cond, since] of due) {
+    const ran = await first(env, `SELECT COUNT(*) n FROM journal WHERE ${cond} AND time >= ?`, since);
+    if (ran.n) continue;
+    const tried = await first(env, "SELECT COUNT(*) n FROM journal WHERE agent='system' AND event=? AND time >= ?", `watchdog: สั่งรัน ${mode}`, `${today}T00:00:00`);
+    if (tried.n) continue;
+    for (const st of ['in_progress', 'queued']) {
+      const r = await gh(env, token, `/actions/workflows/agents.yml/runs?per_page=1&status=${st}`);
+      if (r.ok && ((await r.json()).total_count || 0) > 0) return;   // มีรอบกำลังทำอยู่ รอรอบเช็คถัดไป
+    }
+    const r = await gh(env, token, '/actions/workflows/agents.yml/dispatches', { method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { mode } }) });
+    await logStmt(env, 'system', `watchdog: สั่งรัน ${mode}`, { reason: 'GitHub ไม่ได้รันตามเวลา', github_status: r.status }).run();
+    return;   // ครั้งละโหมดเดียว (weekly รันรายวันให้ด้วยอยู่แล้ว)
+  }
+}
+
 export default {
+  async scheduled(event, env, ctx) { ctx.waitUntil(watchdog(env)); },
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
