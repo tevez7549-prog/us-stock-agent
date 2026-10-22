@@ -82,6 +82,10 @@ def info(t):
 
 
 set_stocks(read_sp500())
+# พอร์ตที่ไม่ต้องรอเจ้าของกดอนุมัติ (เจ้าของเลือกเอง 2026-10-22) — ยังผ่าน Risk Manager + ผู้ตรวจสอบเหมือนเดิม
+# ผู้ตรวจสอบไม่ผ่าน = ไม่อนุมัติอัตโนมัติ / Kill switch ยังหยุดได้ทุกพอร์ต
+AUTO_APPROVE = {"ai_pick"}
+
 BENCHMARK = "SPY"
 FX_TICKER = "THB=X"                    # บาทต่อ 1 ดอลลาร์ (Yahoo)
 CASH_PROXY = "SHY"

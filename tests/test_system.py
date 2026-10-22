@@ -84,6 +84,33 @@ class FakeLLM:
         return self.script.get(agent)
 
 
+class _B:
+    def __init__(self, **k):
+        self.__dict__.update(k)
+
+
+class FakeClient:
+    """Claude จำลองแบบ agent: เรียกเครื่องมือตามบท แล้ว submit — ทดสอบวงจร llm.run_agent + เครื่องมือของ AI Pick"""
+    def __init__(self, turns):
+        self.turns, self.seen = list(turns), []
+        self.messages = self
+
+    def create(self, **kw):
+        if kw["messages"] and isinstance(kw["messages"][-1]["content"], list):
+            self.seen.extend(r["content"] for r in kw["messages"][-1]["content"] if r.get("type") == "tool_result")
+        uses = self.turns.pop(0) if self.turns else [("submit", {"weights": {}, "why": {}, "view": ""})]
+        content = [_B(type="text", text="กำลังค้น")] + [_B(type="tool_use", id=f"t{i}", name=n, input=a) for i, (n, a) in enumerate(uses)]
+        return _B(content=content, stop_reason="tool_use", usage=_B(input_tokens=100, output_tokens=20))
+
+
+def agent_turns():
+    return [[("screen", {"sort": "momentum", "kind": "all", "n": 5}), ("screen", {"kind": "stock", "only_uptrend": True})],
+            [("price_history", {"ticker": "NVDA", "months": 6}), ("news", {"ticker": "NVDA"}), ("fundamentals", {"ticker": "QQQ"}),
+             ("check_risk", {"weights": {"NVDA": 0.6, "QQQ": 0.3}}), ("ไม่มีจริง", {})],
+            [("submit", {"weights": {"NVDA": 0.6, "AAPL": 0.3, "QQQ": 0.3, "FAKE": 0.5, "TLT": -1},
+                         "why": {"NVDA": "ข่าวเปิดตัวชิปใหม่ + โมเมนตัมดี"}, "view": "ลุย"})]]
+
+
 def edgar_test():
     """SEC 8-K: อ่านรายการเอกสาร + ข่าวประชาสัมพันธ์แนบ, ชนิดร้ายแรงโค้ดติดธงเอง (ไม่พึ่ง AI)"""
     from agents import edgar
@@ -115,7 +142,6 @@ def ai_test():
     ind = regime_agent.indicators(d["close"])
     reg = regime_agent.assess(d["close"], ind, date)
     fake = FakeLLM({
-        "ai_pick": {"weights": {"NVDA": 0.6, "AAPL": 0.3, "QQQ": 0.3, "FAKE": 0.5, "TLT": -1}, "why": {"NVDA": "ชอบ"}, "view": "ลุย"},
         "news": {"stocks": [{"ticker": "AAPL", "flag": "block", "reason": "ถูกสอบสวน"},
                             {"ticker": "NVDA", "flag": "ok", "reason": "", "items": [
                                 {"type": "product", "tone": "positive", "importance": 3, "th": "เปิดตัวชิปใหม่", "src": [2]}]}]},
@@ -126,8 +152,10 @@ def ai_test():
     fake_news = {"AAPL": [{"title": "AAPL probe", "url": "u1"}], "NVDA": [{"title": "NVDA launches chip", "url": "https://x/nvda"}]}
     today = __import__("datetime").date.today()
     soon = str(today + __import__("datetime").timedelta(days=2))
-    orig_ask, orig_enabled, orig_fetch = llm.ask_json, llm.enabled, news_agent.fetch
-    llm.ask_json, llm.enabled = fake, lambda: True
+    orig_ask, orig_enabled, orig_fetch, orig_key, orig_client = llm.ask_json, llm.enabled, news_agent.fetch, llm.api_key, llm._client
+    llm.ask_json, llm.enabled, llm.api_key = fake, lambda: True, lambda: "test-key"
+    clients = []
+    llm._client = lambda key: clients.append(FakeClient(agent_turns())) or clients[-1]
     news_agent.fetch = lambda tickers, today=None: (fake_news, {"MSFT": soon}, "test")
     from agents import edgar
     orig_edgar = edgar.fetch
@@ -141,9 +169,18 @@ def ai_test():
         assert dig["stocks"]["MSFT"]["flag"] == "caution", "งบใกล้ออกต้องเป็น caution (โค้ดตัดสิน)"
         assert dig["stocks"]["AAPL"]["flag"] == "block"
         print("[5] ข่าว: NVDA สินค้าใหม่ (ดี, สำคัญ 3) · MSFT งบใกล้ออก → caution · AAPL → block")
-        prop = ai_pick.propose(d["close"], ind, date, reg, held=("NVDA", "AAPL"))   # ถืออยู่ = อยู่ในรายชื่อที่ AI เลือกได้
+        prop = ai_pick.propose(d["close"], ind, date, reg, held=("NVDA", "AAPL"), extra={"news": news_agent.for_ai(dig)})
         w = prop["weights"]
         assert "FAKE" not in w and "TLT" not in w and abs(sum(w.values()) - 1) < 1e-6, w
+        tools = [x["tool"] for x in prop["research"] if "tool" in x]
+        assert tools[:2] == ["screen", "screen"] and "check_risk" in tools and tools[-1] == "submit", tools
+        seen = " ".join(clients[-1].seen)
+        assert "เปิดตัวชิปใหม่" in seen, "เครื่องมือ news ต้องคืนข่าวจากตัวอ่านข่าว"
+        assert '"final_weights"' in seen and "ไม่มีเครื่องมือ" in seen and "ตัวเลขพื้นฐานมีเฉพาะหุ้น" in seen, seen[:500]
+        future = d["close"].index[-1]
+        rs = ai_pick.Research(d["close"], ind, d["close"].index[-300], ())
+        assert max(rs.close.index) < future and max(pd.to_datetime(list(rs.price_history("NVDA")["weekly_close"]))) <= d["close"].index[-300], "เครื่องมือห้ามเห็นอนาคต"
+        print(f"[5] AI agent: ใช้เครื่องมือ {len(tools) - 1} ครั้ง ({', '.join(dict.fromkeys(tools[:-1]))}) แล้ว submit · เห็นข่าวดี · ไม่เห็นข้อมูลอนาคต")
         fin = risk_agent.apply(w, blocked=news_agent.screen(list(w), dig)["blocked"])["weights"]
         assert fin.get("AAPL", 0) == 0, "ข่าว block แล้ว AAPL ต้องหายไป"
         assert fin["NVDA"] <= config.RISK["max_stock"] + 1e-6 and fin["QQQ"] <= config.RISK["max_etf"] + 1e-6, fin
@@ -157,9 +194,14 @@ def ai_test():
         rows = {r["portfolio"]: (r["status"], json.loads(r["audit"])["status"]) for r in
                 paper.conn().execute("SELECT portfolio, status, audit FROM packets")}
         print(f"[5] วงจรเต็ม 4 พอร์ต: {rows}")
-        assert rows["ai_pick"][1] != "fail" and all(v[0] in ("awaiting", "no_action") for v in rows.values()), rows
-        assert "ai_pick" in fake.calls and "macro" in fake.calls and "reporter" in fake.calls
-        assert "เปิดตัวชิปใหม่" in fake.inputs["ai_pick"], "AI Pick ต้องเห็นข่าวดีของหุ้นทุกตัว"
+        assert rows["ai_pick"][1] != "fail" and all(v[0] in ("awaiting", "no_action", "decided") for v in rows.values()), rows
+        assert rows["ai_pick"][0] == "decided", "AI Pick อนุมัติอัตโนมัติ (เจ้าของเลือก)"
+        st = {r["status"] for r in paper.conn().execute("SELECT status FROM orders WHERE portfolio='ai_pick'")}
+        assert st == {"approved"}, st
+        assert {r["status"] for r in paper.conn().execute("SELECT status FROM orders WHERE portfolio='momentum'")} == {"proposed"}, "พอร์ตอื่นยังต้องรอเจ้าของ"
+        assert "macro" in fake.calls and "reporter" in fake.calls
+        pk = json.loads(paper.conn().execute("SELECT data FROM packets WHERE portfolio='ai_pick'").fetchone()["data"])
+        assert pk.get("ai_research"), "แพ็กเกจต้องเก็บเส้นทางการค้นของ AI"
         assert fake.calls.count("news") == 2, "รอบสัปดาห์ต้องอ่านข่าวครั้งเดียว ใช้ร่วมทุกพอร์ต"
         assert paper.get("news_digest", shared=True)["stocks"]["NVDA"]["items"], "เว็บต้องมี digest ให้อ่าน"
         # ข่าวดีไม่มีผลกับกลยุทธ์กฎ: momentum ได้น้ำหนักเท่ากับตอนไม่มี AI เลย
@@ -170,7 +212,7 @@ def ai_test():
         print(f"[5] ข่าวดีไม่เปลี่ยน momentum: {mom == base or 'ต่างเพราะมหภาค/บล็อก'}")
         assert set(mom) - {"AAPL"} <= set(base) | {"SHY"}, (mom, base)
     finally:
-        llm.ask_json, llm.enabled, news_agent.fetch = orig_ask, orig_enabled, orig_fetch
+        llm.ask_json, llm.enabled, news_agent.fetch, llm.api_key, llm._client = orig_ask, orig_enabled, orig_fetch, orig_key, orig_client
         orchestrator.watchlist = orig_watch
         edgar.fetch = orig_edgar
 

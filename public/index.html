@@ -121,6 +121,8 @@
   <div class="row"><select id="decPort"></select><select id="pktSel"></select><span id="pktStatus"></span></div>
   <div id="decAlert" class="alert" hidden></div>
   <div class="panel"><h2>สรุปจากผู้แปลผล</h2><div id="report" class="report"></div></div>
+  <div class="panel" id="aiPanel" hidden><h2>AI Pick ค้นอะไรบ้างก่อนตัดสินใจ</h2><div id="aiView" style="font-size:14px;margin-bottom:8px"></div>
+    <div id="aiTrail" style="font-size:13px"></div></div>
   <div class="panel">
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
       <h2 style="margin:0">ออเดอร์ที่เสนอ</h2>
@@ -223,7 +225,7 @@ const KIND = {etf:"ETF",stock:"หุ้น",defensive:"ป้องกัน",c
 const PORTS = {momentum:["Momentum","#5b9dff"], dual_momentum:["Dual Momentum","#22c38e"], risk_parity:["Risk Parity","#f2b84b"], ai_pick:["AI Pick","#c678dd"]};
 const PORT_KEYS = Object.keys(PORTS);
 const REG = {risk_on:["ขาขึ้น","ok"],caution:["ระวัง","warn"],risk_off:["ขาลง","bad"]};
-const ST = {proposed:"รอตัดสินใจ",approved:"อนุมัติแล้ว รอเทรด",filled:"เทรดแล้ว",rejected:"ปฏิเสธ",expired:"หมดอายุ",held:"พักไว้",cancelled:"ยกเลิก",blocked:"ถูกบล็อก",
+const ST = {auto:"อนุมัติอัตโนมัติ",proposed:"รอตัดสินใจ",approved:"อนุมัติแล้ว รอเทรด",filled:"เทรดแล้ว",rejected:"ปฏิเสธ",expired:"หมดอายุ",held:"พักไว้",cancelled:"ยกเลิก",blocked:"ถูกบล็อก",
             awaiting:"รอตัดสินใจ",decided:"ตัดสินใจครบ",no_action:"ไม่ต้องเทรด"};
 let UNI = {};
 async function guard(btn, fn){ btn.disabled = true; const t = btn.textContent; btn.textContent = "กำลังทำงาน…"; try{ await fn(); }catch(e){ alert(e.message); } btn.disabled = false; btn.textContent = t; }
@@ -422,10 +424,21 @@ async function loadPackets(){
 function fillPktSel(){
   const ps = allPk.filter(p => p.portfolio === decPort);
   $("pktSel").innerHTML = ps.map(p => `<option value="${p.id}">#${p.id} · สัญญาณ ${p.signal_date} · ${ST[p.status]||p.status}</option>`).join("") || "<option value=''>ยังไม่มีแพ็กเกจ</option>";
-  if (ps.length) showPacket(ps[0].id); else { $("report").textContent = "พอร์ตนี้ยังไม่มีแพ็กเกจ"; $("ordTbl").innerHTML = ""; $("ticket").textContent = ""; $("tgtTbl").innerHTML = ""; $("rankTbl").innerHTML = ""; $("auditBox").innerHTML = ""; $("pktStatus").innerHTML = ""; $("btnApproveAll").disabled = $("btnRejectAll").disabled = true; }
+  if (ps.length) showPacket(ps[0].id); else { $("aiPanel").hidden = true; $("report").textContent = "พอร์ตนี้ยังไม่มีแพ็กเกจ"; $("ordTbl").innerHTML = ""; $("ticket").textContent = ""; $("tgtTbl").innerHTML = ""; $("rankTbl").innerHTML = ""; $("auditBox").innerHTML = ""; $("pktStatus").innerHTML = ""; $("btnApproveAll").disabled = $("btnRejectAll").disabled = true; }
 }
 $("decPort").onchange = e => { decPort = e.target.value; fillPktSel(); };
 $("pktSel").onchange = e => { if (e.target.value) showPacket(e.target.value); };
+const TOOLT = {screen:"คัดหุ้น", price_history:"ดูราคาย้อนหลัง", fundamentals:"ดูตัวเลขพื้นฐาน", news:"อ่านข่าว", check_risk:"ลองผ่าน Risk Manager", submit:"ส่งพอร์ต"};
+function renderTrail(d){
+  const tr = d.ai_research || [];
+  $("aiPanel").hidden = !tr.length && !d.ai_view;
+  $("aiView").innerHTML = d.ai_view ? `<b>มุมมองของ AI:</b> ${esc(d.ai_view)}` : "";
+  const arg = x => { const i = x.input || {}; return esc(i.ticker || (i.weights ? Object.entries(i.weights).map(([t,w]) => `${t} ${fmt(w*100,0)}%`).join(", ") : [i.sort, i.kind, i.group, i.only_uptrend ? "เหนือเส้น 200 วัน" : ""].filter(Boolean).join(" · "))); };
+  const n = tr.filter(x => x.tool && x.tool !== "submit").length;
+  $("aiTrail").innerHTML = (n ? `<div class="muted" style="margin-bottom:6px">ใช้เครื่องมือ ${n} ครั้ง</div>` : "") + tr.map((x,i) => x.think
+    ? `<div class="muted" style="margin:6px 0 2px;font-style:italic">💭 ${esc(x.think)}</div>`
+    : `<div style="padding:3px 0;border-top:1px solid var(--line)"><span class="badge">${TOOLT[x.tool]||esc(x.tool)}</span> <span class="mono">${arg(x)}</span>${x.result ? `<div class="muted mono" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.result)}</div>` : ""}</div>`).join("");
+}
 async function showPacket(id){
   const p = await api(`/api/packets/${id}`); curPkt = p; const d = p.data, a = p.audit;
   $("pktSel").value = p.id;
@@ -434,6 +447,7 @@ async function showPacket(id){
   $("decAlert").hidden = a.status !== "fail"; $("decAlert").className = "alert bad";
   $("decAlert").textContent = "⛔ ผู้ตรวจสอบไม่ผ่าน: อนุมัติไม่ได้ — " + a.fails.join(" · ");
   $("report").textContent = p.report;
+  renderTrail(d);
   const open = p.orders.filter(o => o.status === "proposed" || o.status === "held");
   $("btnApproveAll").disabled = $("btnRejectAll").disabled = !open.length || a.status === "fail";
   $("ordTbl").innerHTML = `<tr><th class="l">ออเดอร์</th><th class="l">สินทรัพย์</th><th>มูลค่า $</th><th>สัดส่วน เดิม → ใหม่</th><th>ราคาอ้างอิง</th><th class="l">เหตุผล</th><th class="l">สถานะ</th><th></th></tr>`

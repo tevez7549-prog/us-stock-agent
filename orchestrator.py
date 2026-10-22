@@ -215,15 +215,17 @@ def _weekly_one(d, ctx, as_of):
 
     # กลยุทธ์เสนอ → ข่าวกรอง → Risk Manager บังคับกฎ
     dig = ctx.get("news")
-    if meta["uses_ai"]:   # AI Pick เห็นประเด็นข่าวของหุ้นทุกตัว (รวมข่าวดี เช่น สินค้าใหม่)
-        prop = meta["module"].propose(close, ind, date, reg, held=held_risky,
-                                      extra={"news": news_agent.for_ai(dig), "macro": macro.get("note")})
-    else:                 # กลยุทธ์กฎ: ข่าวไม่มีผลกับการเลือก มีแค่ธง block ที่ตัดออก
-        prop = meta["module"].propose(close, ind, date, reg, held=held_risky)
-    news = news_agent.screen([t for t in prop["weights"] if config.info(t)["kind"] in RISKY], dig)
     with paper.conn() as c:
         peak = c.execute("SELECT MAX(usd) m FROM equity WHERE portfolio=?", (P,)).fetchone()["m"] or equity
     dd = max(0.0, 1 - equity / peak)
+    if meta["uses_ai"]:   # AI Pick (agent) ค้นข้อมูลเอง + เห็นประเด็นข่าวของหุ้นที่ติดตาม (รวมข่าวดี เช่น สินค้าใหม่)
+        prop = meta["module"].propose(close, ind, date, reg, held=held_risky, extra={
+            "news": news_agent.for_ai(dig), "macro": macro.get("note"), "drawdown": dd,
+            "current_weights": {t: v / equity for t, v in vals.items() if v > 0},
+            "blocked": [t for t, s in ((dig or {}).get("stocks") or {}).items() if s.get("flag") == "block"]})
+    else:                 # กลยุทธ์กฎ: ข่าวไม่มีผลกับการเลือก มีแค่ธง block ที่ตัดออก
+        prop = meta["module"].propose(close, ind, date, reg, held=held_risky)
+    news = news_agent.screen([t for t in prop["weights"] if config.info(t)["kind"] in RISKY], dig)
     fin = risk_agent.apply(prop["weights"], drawdown=dd, blocked=news.get("blocked", []), portfolio=P)
     target = fin["weights"]
     rank = {r["ticker"]: r["rank"] for r in prop["ranking"]}
@@ -252,7 +254,7 @@ def _weekly_one(d, ctx, as_of):
               "held_risky": held_risky, "news": news, "macro": macro,
               "news_items": {t: (dig or {}).get("stocks", {}).get(t, {}).get("items", [])
                              for t in sorted(set(target) | set(pos)) if (dig or {}).get("stocks", {}).get(t, {}).get("items")}, "risk_log": fin["log"], "ranking": prop["ranking"],
-              "ai_view": prop.get("view"), "prev_regime": paper.get("prev_regime"), "quality": quality,
+              "ai_view": prop.get("view"), "ai_research": prop.get("research"), "prev_regime": paper.get("prev_regime"), "quality": quality,
               "data_source": d.get("source")}
     audit = auditor_agent.audit(packet, d, quality)
     report = reporter_agent.write(packet, audit)
@@ -268,6 +270,11 @@ def _weekly_one(d, ctx, as_of):
                       "VALUES (?,?,?,?,?,?,?,?,?,?)",
                       (P, pid, o["ticker"], o["side"], o["usd"], o["ref_price"], o["w_from"], o["w_to"], o["reason"],
                        "proposed" if status == "awaiting" else "blocked"))
+        if status == "awaiting" and P in config.AUTO_APPROVE:   # เจ้าของเลือกให้พอร์ตนี้ไม่ต้องรออนุมัติ (ผู้ตรวจสอบต้องผ่านก่อน)
+            c.execute("UPDATE orders SET status='approved', decided_at=?, note='อนุมัติอัตโนมัติ' WHERE packet_id=? AND status='proposed'",
+                      (paper.now_th(), pid))
+            c.execute("UPDATE packets SET status='decided' WHERE id=?", (pid,))
+            status = "auto"
     paper.put("prev_up", reg["spy_above_sma"])
     paper.put("prev_regime", reg["regime"])
     paper.log("orchestrator", f"สร้างแพ็กเกจ #{pid} ({status})",
