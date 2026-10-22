@@ -202,7 +202,7 @@ def ai_test():
         assert "macro" in fake.calls and "reporter" in fake.calls
         pk = json.loads(paper.conn().execute("SELECT data FROM packets WHERE portfolio='ai_pick'").fetchone()["data"])
         assert pk.get("ai_research"), "แพ็กเกจต้องเก็บเส้นทางการค้นของ AI"
-        assert fake.calls.count("news") == 2, "รอบสัปดาห์ต้องอ่านข่าวครั้งเดียว ใช้ร่วมทุกพอร์ต"
+        assert fake.calls.count("news") == 2, ("รอบสัปดาห์ต้องอ่านข่าวครั้งเดียว ใช้ร่วมทุกพอร์ต", fake.calls)
         assert paper.get("news_digest", shared=True)["stocks"]["NVDA"]["items"], "เว็บต้องมี digest ให้อ่าน"
         # ข่าวดีไม่มีผลกับกลยุทธ์กฎ: momentum ได้น้ำหนักเท่ากับตอนไม่มี AI เลย
         mom = json.loads(paper.conn().execute("SELECT data FROM packets WHERE portfolio='momentum'").fetchone()["data"])["target"]

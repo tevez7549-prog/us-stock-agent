@@ -191,6 +191,16 @@ def _is_month_end_week(date):
     return (date + pd.Timedelta(days=7)).month != date.month
 
 
+def _is_week_close(date, now=None):
+    """แพ็กเกจรายสัปดาห์ใช้ราคาปิด "วันซื้อขายสุดท้ายของสัปดาห์" เท่านั้น (ปกติคือวันศุกร์)
+    กันไม่ให้รอบกลางสัปดาห์เสนอเปลี่ยนพอร์ตก่อนเจ้าของได้เห็นผลของชุดที่เพิ่งซื้อ (เจ้าของขอ 2026-10-23)
+    ศุกร์เป็นวันหยุดตลาด → ยอมรับราคาปิดวันพฤหัส เมื่อรันตอนเสาร์/อาทิตย์ของสัปดาห์นั้น"""
+    if date.weekday() == 4:
+        return True
+    ny = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="America/New_York").tz_localize(None)
+    return date.weekday() == 3 and ny.weekday() >= 5 and (ny.normalize() - date.normalize()).days <= 3
+
+
 def _shared_context(d, date, as_of):
     """สิ่งที่ทุกพอร์ตใช้ร่วมกันในรอบนี้ (คำนวณครั้งเดียว): คุณภาพข้อมูล ตัวชี้วัด มหภาค"""
     close = d["close"]
@@ -216,6 +226,9 @@ def _weekly_one(d, ctx, as_of):
         return None
     if meta["cadence"] == "monthly" and not _is_month_end_week(date) and paper.get("started"):
         return None   # กลยุทธ์รายเดือน: ตัดสินใจเฉพาะสัปดาห์สุดท้ายของเดือน (ยกเว้นรอบแรกตอนพอร์ตยังว่าง)
+    if paper.get("started") and not _is_week_close(date):
+        paper.log("orchestrator", "ไม่สร้างแพ็กเกจ: ใช้ราคาปิดวันศุกร์เท่านั้น (รอบเสาร์ราว 11:00)", {"data": str(date.date())})
+        return None
     paper.put("started", True)
     with paper.conn() as c:
         # แพ็กเกจเก่าที่ยังไม่ตัดสินใจ → หมดอายุ
