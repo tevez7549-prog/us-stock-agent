@@ -42,6 +42,8 @@
   td.l,th.l{text-align:left} td.wrap{white-space:normal;text-align:left;min-width:220px}
   .scroll{overflow:auto}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  #posTbl tr.click{cursor:pointer} #posTbl tr.click:hover td{background:rgba(91,157,255,.06)} #posTbl tr.sel td{background:rgba(91,157,255,.12)}
+  #stkRange button.on{border-color:var(--accent);color:var(--accent)}
   .holdGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
   .holdGrid .col{border:1px solid var(--line);border-radius:6px;padding:10px;min-width:0}
   .holdGrid .ln{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:2px 0}
@@ -115,7 +117,14 @@
         <button id="newsTog">ซ่อน</button></div></div>
     <div id="newsBox" style="margin-top:8px"></div>
     <div class="muted" style="font-size:12px;margin-top:8px">AI อ่านข่าว 7 วัน (เอกสาร SEC 8-K + Finnhub) วันละครั้ง ของหุ้นที่ถืออยู่ + หุ้นโมเมนตัมสูงสุด 30 ตัวใน S&P 500 · ข่าวดีมีผลกับ AI Pick เท่านั้น · ธง "ตัดออก" ใช้กับทุกพอร์ต · งบใกล้ออก = ระวัง (ราคาอาจกระโดด)</div></div>
-  <div class="panel"><div class="row" style="justify-content:space-between"><h2 id="posTitle" style="margin:0">สิ่งที่ถืออยู่</h2><select id="posSel"></select></div><div class="scroll" style="margin-top:8px"><table id="posTbl"></table></div></div>
+  <div class="panel"><div class="row" style="justify-content:space-between"><h2 id="posTitle" style="margin:0">สิ่งที่ถืออยู่</h2><select id="posSel"></select></div><div class="scroll" style="margin-top:8px"><table id="posTbl"></table></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">แตะแถวเพื่อดูกราฟของตัวนั้นในกลยุทธ์นี้ (จุดซื้อขาย + เส้นต้นทุน)</div>
+    <div id="stkPanel" hidden style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+      <div class="row" style="justify-content:space-between;gap:8px"><div id="stkTitle" style="font-weight:500"></div>
+        <div class="row" style="gap:4px" id="stkRange"><button data-d="22">1M</button><button data-d="66">3M</button><button data-d="132">6M</button><button data-d="999" class="on">1Y</button><button id="stkClose">✕</button></div></div>
+      <div id="stkInfo" class="muted" style="font-size:13px;margin:6px 0"></div>
+      <div id="stkChart" class="chart" style="height:260px"></div>
+    </div></div>
 </section>
 
 <!-- ============ ตัดสินใจ ============ -->
@@ -287,6 +296,56 @@ async function loadStatus(){
   render();
   refreshQuotes();
 }
+// ---------- กราฟรายตัว
+let SPARK = {}, selStock = null, stkDays = 999, STK = null;
+async function loadSparks(tickers){
+  const need = tickers.filter(t => !(t in SPARK));
+  if (!need.length) return;
+  need.forEach(t => SPARK[t] = null);
+  try{ const r = await api("/api/prices?days=95&tickers=" + need.join(",")); need.forEach(t => SPARK[t] = r[t] || []); render(); }catch(e){}
+}
+function spark(t, live){
+  const d = (SPARK[t] || []).map(x => x[1]);
+  if (live && d.length) d.push(live);
+  if (d.length < 2) return '<span class="muted" style="font-size:11px">—</span>';
+  const W = 84, H = 24, lo = Math.min(...d), hi = Math.max(...d), r = hi - lo || 1;
+  const pts = d.map((v,i) => `${(i/(d.length-1)*W).toFixed(1)},${(H - 2 - (v-lo)/r*(H-4)).toFixed(1)}`).join(" ");
+  const up = d[d.length-1] >= d[0];
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block"><polyline points="${pts}" fill="none" stroke="${up ? "var(--up)" : "var(--down)"}" stroke-width="1.5"/></svg>`;
+}
+let stkC = null;
+async function openStock(t){
+  selStock = t; render();
+  $("stkPanel").hidden = false;
+  $("stkTitle").innerHTML = `${esc(t)} <span class="muted">${esc(nameOf(t))} · ${PORTS[posPort][0]}</span>`;
+  $("stkInfo").textContent = "กำลังโหลด…";
+  try{ STK = await api(`/api/stock?ticker=${encodeURIComponent(t)}&portfolio=${posPort}`); }catch(e){ $("stkInfo").textContent = e.message; return; }
+  drawStock();
+  $("stkPanel").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+function drawStock(){
+  if (!STK) return;
+  if (!stkC){ const c = LightweightCharts.createChart($("stkChart"), chartOpts);
+    stkC = {c, line: c.addAreaSeries({lineColor:"#5b9dff", topColor:"rgba(91,157,255,.25)", bottomColor:"rgba(91,157,255,0)", lineWidth:2}), cost: null}; }
+  let pts = STK.closes.slice(-stkDays).map(([d,v]) => ({time:d, value:v}));
+  const live = LIVE[STK.ticker] && LIVE[STK.ticker].price, today = new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  if (live && pts.length && pts[pts.length-1].time < today) pts = pts.concat([{time: today, value: live}]);
+  stkC.line.setData(pts);
+  if (stkC.cost){ stkC.line.removePriceLine(stkC.cost); stkC.cost = null; }
+  const pos = STK.position, avg = pos && pos.shares ? pos.cost_usd / pos.shares : null;
+  if (avg) stkC.cost = stkC.line.createPriceLine({price: avg, color:"#f2b84b", lineWidth:1, lineStyle:2, axisLabelVisible:true, title:"ต้นทุนเฉลี่ย"});
+  const first = pts.length ? pts[0].time : "";
+  stkC.line.setMarkers(STK.fills.filter(f => f.date >= first).map(f => ({time:f.date, position: f.side === "BUY" ? "belowBar" : "aboveBar", color: f.side === "BUY" ? "#22c38e" : "#f0596a",
+    shape: f.side === "BUY" ? "arrowUp" : "arrowDown", text: `${f.side === "BUY" ? "ซื้อ" : "ขาย"} ${fmt(f.price)}`})));
+  stkC.c.timeScale().fitContent();
+  const last = pts.length ? pts[pts.length-1].value : null, p0 = pts.length ? pts[0].value : null;
+  $("stkInfo").innerHTML = !pts.length ? "ยังไม่มีราคาย้อนหลัง — จะมีหลังรอบรายวันครั้งถัดไป"
+    : `ราคา ${fmt(last)} · ช่วงนี้ <span class="${cls(last/p0-1)}">${pct(last/p0-1,1)}</span>` + (avg ? ` · ต้นทุนเฉลี่ย ${fmt(avg)} (<span class="${cls(last/avg-1)}">${pct(last/avg-1,2)}</span>) · ถือ ${fmt(pos.shares,4)} หุ้น` : " · พอร์ตนี้ไม่ได้ถือแล้ว")
+      + (STK.fills.length ? ` · ซื้อขาย ${STK.fills.length} ครั้ง` : "");
+}
+document.querySelectorAll("#stkRange button[data-d]").forEach(b => b.onclick = () => {
+  stkDays = +b.dataset.d; document.querySelectorAll("#stkRange button[data-d]").forEach(x => x.classList.toggle("on", x === b)); drawStock(); });
+$("stkClose").onclick = () => { selStock = null; STK = null; $("stkPanel").hidden = true; render(); };
 let INTRA = [];
 const ovModeSaved = (() => { try{ return localStorage.getItem("usa_ovmode"); }catch(e){ return null; } })();
 if (ovModeSaved) $("ovMode").value = ovModeSaved;
@@ -336,14 +395,17 @@ function render(){
   const t = T[posPort];
   $("posTitle").innerHTML = `สิ่งที่ถืออยู่ · ${PORTS[posPort][0]}` + (live ? ' <span class="muted">· ราคาสด</span>' : "");
   const rows = t.rows.slice().sort((a,b) => b.value - a.value);
-  $("posTbl").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">ประเภท</th><th>จำนวน</th><th>ราคา</th><th>วันนี้</th><th>มูลค่า $</th><th>สัดส่วน</th><th>ต้นทุน $</th><th>กำไร/ขาดทุน</th></tr>`
+  $("posTbl").innerHTML = `<tr><th class="l">สินทรัพย์</th><th class="l">3 เดือน</th><th class="l">ประเภท</th><th>จำนวน</th><th>ราคา</th><th>วันนี้</th><th>มูลค่า $</th><th>สัดส่วน</th><th>ต้นทุน $</th><th>กำไร/ขาดทุน</th></tr>`
     + (rows.length ? rows.map(p => { const pl = p.cost_usd ? p.value/p.cost_usd-1 : null;
-      return `<tr><td class="l mono">${p.ticker}</td><td class="l muted">${KIND[UNI[p.ticker]]||""}</td><td class="mono">${fmt(p.shares,4)}</td><td class="mono">${fmt(p.price)}</td><td class="mono ${cls(p.day)}">${p.day==null?"—":pct(p.day,2)}</td><td class="mono">${fmt(p.value)}</td><td class="mono">${fmt(p.value/t.total*100,1)}%</td><td class="mono">${fmt(p.cost_usd)}</td><td class="mono ${cls(pl)}">${pct(pl,2)}</td></tr>`; }).join("")
-      : `<tr><td class="l muted" colspan="9">ยังไม่มี — รอแพ็กเกจแล้วอนุมัติออเดอร์</td></tr>`);
+      return `<tr class="click${p.ticker===selStock?" sel":""}" data-t="${esc(p.ticker)}"><td class="l mono">${p.ticker}</td><td class="l">${spark(p.ticker, p.price)}</td><td class="l muted">${KIND[UNI[p.ticker]]||""}</td><td class="mono">${fmt(p.shares,4)}</td><td class="mono">${fmt(p.price)}</td><td class="mono ${cls(p.day)}">${p.day==null?"—":pct(p.day,2)}</td><td class="mono">${fmt(p.value)}</td><td class="mono">${fmt(p.value/t.total*100,1)}%</td><td class="mono">${fmt(p.cost_usd)}</td><td class="mono ${cls(pl)}">${pct(pl,2)}</td></tr>`; }).join("")
+      : `<tr><td class="l muted" colspan="10">ยังไม่มี — รอแพ็กเกจแล้วอนุมัติออเดอร์</td></tr>`);
+  document.querySelectorAll("#posTbl tr.click").forEach(tr => tr.onclick = () => openStock(tr.dataset.t));
+  loadSparks(rows.map(r => r.ticker));
   renderNews();
   renderHold();
 }
-$("posSel").onchange = e => { posPort = e.target.value; render(); };
+$("posSel").onchange = e => { posPort = e.target.value;
+  if (selStock && PF(posPort).positions.some(x => x.ticker === selStock)) openStock(selStock); else { selStock = null; STK = null; $("stkPanel").hidden = true; } render(); };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ETFN = {SPY:"S&P 500",QQQ:"Nasdaq 100",IWM:"หุ้นเล็กสหรัฐ",EFA:"หุ้นประเทศพัฒนาแล้ว",EEM:"ตลาดเกิดใหม่",XLK:"กลุ่มเทค",XLV:"กลุ่มสุขภาพ",XLF:"กลุ่มการเงิน",XLE:"กลุ่มพลังงาน",XLI:"กลุ่มอุตสาหกรรม",XLP:"สินค้าจำเป็น",XLU:"สาธารณูปโภค",XLY:"สินค้าฟุ่มเฟือย",TLT:"พันธบัตร 20 ปี",IEF:"พันธบัตร 7–10 ปี",GLD:"ทองคำ",SHY:"พันธบัตรสั้น (แทนเงินสด)"};
 const nameOf = t => ETFN[t] || (S && S.names || {})[t] || "";

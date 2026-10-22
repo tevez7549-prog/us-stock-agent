@@ -439,6 +439,24 @@ export default {
         }
         if (p === '/api/journal') return json(await all(env, 'SELECT * FROM journal ORDER BY id DESC LIMIT 400'));
         if (p === '/api/quotes') return quotes(url, env, ctx);
+        if (p === '/api/prices') {   // กราฟเล็กในตาราง: ราคาปิด N วันล่าสุดของหลายตัว
+          const syms = (url.searchParams.get('tickers') || '').split(',').map(x => x.trim().toUpperCase()).filter(x => TICKER_RE.test(x)).slice(0, 40);
+          const days = Math.min(Math.max(Number(url.searchParams.get('days')) || 90, 5), 800);
+          if (!syms.length) return json({});
+          const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+          const rows = await all(env, `SELECT ticker, date, close FROM prices WHERE ticker IN (${syms.map(() => '?').join(',')}) AND date >= ? ORDER BY date`, ...syms, since);
+          const out = {};
+          for (const r of rows) (out[r.ticker] = out[r.ticker] || []).push([r.date, r.close]);
+          return json(out);
+        }
+        if (p === '/api/stock') {    // กราฟรายตัวของพอร์ตหนึ่ง: ราคาปิดย้อนหลัง + จุดซื้อขาย + ต้นทุน
+          const t = (url.searchParams.get('ticker') || '').toUpperCase(), port = url.searchParams.get('portfolio') || '';
+          if (!TICKER_RE.test(t) || !PORTFOLIOS.includes(port)) return json({ error: 'bad params' }, 400);
+          const closes = await all(env, 'SELECT date, close FROM prices WHERE ticker=? ORDER BY date', t);
+          const fills = await all(env, "SELECT fill_date date, side, fill_price price, shares FROM orders WHERE portfolio=? AND ticker=? AND status='filled' ORDER BY fill_date", port, t);
+          const pos = await first(env, 'SELECT shares, cost_usd FROM positions WHERE portfolio=? AND ticker=?', port, t);
+          return json({ ticker: t, portfolio: port, closes: closes.map(r => [r.date, r.close]), fills, position: pos || null });
+        }
         if (p === '/api/intraday') {
           const days = Math.min(Math.max(Number(url.searchParams.get('days')) || 5, 1), 10);
           return json(await all(env, 'SELECT portfolio, ts, usd FROM intraday WHERE ts >= ? ORDER BY ts', new Date(Date.now() - days * 864e5).toISOString().slice(0, 16)));

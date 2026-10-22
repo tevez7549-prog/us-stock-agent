@@ -120,11 +120,35 @@ def daily(d):
     paper.put("fx", round(float(fx.iloc[-1]), 4), shared=True)
     paper.put("last_data", str(close.index[-1].date()), shared=True)
     paper.put("data_source", d.get("source"), shared=True)
+    try:
+        publish_prices(close)
+    except Exception as e:
+        paper.log("data", "บันทึกราคารายตัวไม่สำเร็จ", {"error": str(e)[:200]}, shared=True)
     uni = {t: m["kind"] for t, m in config.UNIVERSE.items()}
     if paper.get("universe", shared=True) != uni:
         paper.put("universe", uni, shared=True)
         paper.put("names", {t: m.get("name", "") for t, m in config.UNIVERSE.items() if m["kind"] == "stock"}, shared=True)
     return news_today(d)
+
+
+def publish_prices(close):
+    """ราคาปิดย้อนหลังของตัวที่ถือ + ตัวในแพ็กเกจล่าสุด + SPY ลง D1 ให้เว็บวาดกราฟรายตัว
+    ตัวใหม่เขียนย้อนหลัง ~1.5 ปี ตัวที่มีแล้วเขียนแค่ 10 วันล่าสุด (เติม/แก้ราคาที่ปรับปันผล)"""
+    import re
+    with paper.conn() as c:
+        want = set(held_everywhere()) | {config.BENCHMARK}
+        for r in c.execute("SELECT data FROM packets WHERE id IN (SELECT MAX(id) FROM packets GROUP BY portfolio)").fetchall():
+            want |= set((json.loads(r["data"]) or {}).get("target", {}))
+        have = {r["ticker"] for r in c.execute("SELECT DISTINCT ticker FROM prices").fetchall()}
+        for t in sorted(want):
+            if t not in close.columns or not re.fullmatch(r"[A-Z.\-]{1,10}", t):
+                continue
+            s = close[t].dropna().iloc[-(380 if t not in have else 10):]
+            if s.empty:
+                continue
+            vals = ",".join(f"('{t}','{d.date()}',{float(v):.6g})" for d, v in s.items())
+            c.execute(f"INSERT OR REPLACE INTO prices (ticker, date, close) VALUES {vals}")
+        c.execute("DELETE FROM prices WHERE date < date('now', '-800 day')")
 
 
 def held_everywhere():
