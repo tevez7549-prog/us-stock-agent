@@ -8,6 +8,7 @@ import pandas as pd
 import config
 
 CACHE = "data/prices.pkl"
+DIAG = {}   # รายละเอียดการดึงข้อมูลรอบล่าสุด (บันทึกลง journal ให้ตรวจย้อนหลังได้)
 
 
 def core_tickers():
@@ -56,6 +57,9 @@ def fetch_yfinance(start=config.DATA_START, extra=()):
     open_ = open_.drop(columns=[config.FX_TICKER], errors="ignore")
     # ค่าเงิน (THB=X) ซื้อขาย 24 ชม. ทำให้มีแถวของวันที่ตลาดสหรัฐไม่ได้เปิด → เก็บเฉพาะวันที่ SPY มีราคาจริง
     us_day = close[config.BENCHMARK].notna()
+    last_row = close.iloc[-1]
+    DIAG.update(raw_last=str(close.index[-1].date()), spy_last=str(close[config.BENCHMARK].last_valid_index().date()),
+                tickers_on_raw_last=int(last_row.notna().sum()), tickers=int(close.shape[1]))
     return {"close": close[us_day], "open": open_[us_day], "fx": fx.ffill()[us_day]}
 
 
@@ -91,6 +95,7 @@ def drop_unfinished_day(d, now=None):
     from zoneinfo import ZoneInfo
     ny = (now or pd.Timestamp.now(tz="UTC")).tz_convert(ZoneInfo("America/New_York"))
     last = d["close"].index[-1]
+    DIAG.update(ny_now=ny.strftime("%Y-%m-%d %H:%M"), dropped_unfinished=bool(last.date() == ny.date() and (ny.hour, ny.minute) < (16, 30)))
     if last.date() == ny.date() and (ny.hour, ny.minute) < (16, 30):
         d = {k: v.iloc[:-1] if hasattr(v, "iloc") else v for k, v in d.items()}
     return d

@@ -383,7 +383,7 @@ def load_data(source="auto"):
     extra = [t for t in held_everywhere() if t not in config.UNIVERSE]   # หลุดจาก S&P 500 แต่ยังถือ → ต้องมีราคาไว้ขาย
     d, src = data_agent.load(source, allow_synthetic=not paper.remote(), extra=extra)
     d["source"] = src
-    paper.log("data", f"โหลดข้อมูลจาก {src}", {"last": str(d["close"].index[-1].date())}, shared=True)
+    paper.log("data", f"โหลดข้อมูลจาก {src}", {"last": str(d["close"].index[-1].date()), **data_agent.DIAG}, shared=True)
     return d
 
 
