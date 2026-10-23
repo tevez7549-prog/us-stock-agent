@@ -10,7 +10,7 @@ import json
 import re
 import time
 import urllib.request
-from datetime import date as _date, timedelta
+from datetime import date as _date, datetime, timedelta, timezone
 
 import config
 
@@ -60,7 +60,7 @@ def filings(ticker, cik, today=None, days=7, max_docs=3):
     """8-K ใน N วันล่าสุดของบริษัท → [{date, items, title, summary, url, source}]"""
     if not cik:
         return []
-    today = today or _date.today()
+    today = today or datetime.now(timezone.utc).date()   # วันที่ UTC ให้ตรงกับ orchestrator.news_today (กันอ่านข่าวซ้ำตอนเวลาไทยข้ามวัน)
     since = str(today - timedelta(days=days))
     sub = _get(f"https://data.sec.gov/submissions/CIK{int(cik):010d}.json")
     rec = sub.get("filings", {}).get("recent", {})

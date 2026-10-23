@@ -82,7 +82,7 @@ def _yf_news(t):
 
 def fetch(tickers, today=None):
     """ข่าวต่อหุ้น + วันประกาศงบ คืน ({ticker: [ข่าว]}, {ticker: 'YYYY-MM-DD'}, แหล่ง)"""
-    today = today or _date.today()
+    today = today or datetime.now(timezone.utc).date()   # วันที่ UTC ให้ตรงกับ orchestrator.news_today (กันอ่านข่าวซ้ำตอนเวลาไทยข้ามวัน)
     start, end = str(today - timedelta(days=7)), str(today)
     key = _finnhub_key()
     news, src = {}, "finnhub" if key else "yfinance"
@@ -146,7 +146,7 @@ def stocks():
 def digest(tickers=None, news=None, earnings=None, today=None):
     """สรุปข่าวทุกหุ้น คืน {"enabled","date","source","stocks":{t:{flag,reason,items,earnings,news}}}"""
     tickers = tickers or stocks()[:40]   # ปกติ orchestrator ส่งรายชื่อที่ถือ + โมเมนตัมสูงสุดมาให้
-    today = today or _date.today()
+    today = today or datetime.now(timezone.utc).date()   # วันที่ UTC ให้ตรงกับ orchestrator.news_today (กันอ่านข่าวซ้ำตอนเวลาไทยข้ามวัน)
     base = {"date": str(today), "stocks": {}}
     if not llm.enabled():
         return {**base, "enabled": False, "note": "ยังไม่ได้ใส่ Anthropic API key"}

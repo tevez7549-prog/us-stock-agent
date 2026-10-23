@@ -184,7 +184,7 @@ async function status(env) {
   const counts = await all(env, "SELECT portfolio, SUM(status IN ('proposed','held')) pending, SUM(status='approved') approved FROM orders GROUP BY portfolio");
   const lastPk = await all(env, "SELECT portfolio, id, signal_date, status, json_extract(data, '$.target') target FROM packets WHERE id IN (SELECT MAX(id) FROM packets GROUP BY portfolio)");
   for (const x of lastPk) x.target = x.target ? JSON.parse(x.target) : null;
-  const open = await all(env, "SELECT portfolio, ticker, side, status FROM orders WHERE status IN ('proposed','approved','held')");
+  const open = await all(env, "SELECT id, portfolio, ticker, side, status, decided_at FROM orders WHERE status IN ('proposed','approved','held')");
   const lastRun = await first(env, "SELECT time, event FROM journal WHERE agent IN ('orchestrator','data') ORDER BY id DESC LIMIT 1");
   const portfolios = {};
   for (const p of PORTFOLIOS) {
@@ -207,6 +207,39 @@ async function packet(env, id) {
 }
 
 // ---------- API: ตัดสินใจ (ตรรกะเดียวกับ orchestrator.decide) ----------
+// เวลาเปิดตลาดนิวยอร์ก (ms UTC) ที่ออเดอร์ซึ่งอนุมัติ ณ เวลาไทย decidedTh จะถูกซื้อขาย
+// ตรงกับ orchestrator._fill_orders: อนุมัติก่อน 09:30 NY ของวันทำการ = เปิดวันนั้น, หลังจากนั้น = วันทำการถัดไป (ไม่รู้วันหยุดนักขัตฤกษ์)
+function nyOffsetMin(utcMs) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: false })
+    .formatToParts(new Date(utcMs)).map(x => [x.type, x.value]));
+  return (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute) - Math.floor(utcMs / 60000) * 60000) / 60000;
+}
+function fillOpenMs(decidedTh) {
+  const t = typeof decidedTh === 'number' ? decidedTh : Date.parse(String(decidedTh).slice(0, 19) + '+07:00');
+  const wallNow = t + nyOffsetMin(t) * 60000;                       // เวลานิวยอร์กแบบ "นาฬิกาผนัง" เก็บในฟิลด์ UTC
+  let day = Math.floor(wallNow / 864e5) * 864e5;
+  if ((wallNow - day) / 60000 >= 570) day += 864e5;
+  while ([0, 6].includes(new Date(day).getUTCDay())) day += 864e5;
+  const wall = day + 570 * 60000;                                    // 09:30 NY
+  return wall - nyOffsetMin(wall + 5 * 3600e3) * 60000;
+}
+
+// ยกเลิกออเดอร์ที่อนุมัติแล้ว — ได้ถึงเวลาตลาดเปิดรอบที่จะซื้อขายเท่านั้น (หลังจากนั้น = รู้ราคาแล้ว ยกเลิกไม่ได้ กันเลือกย้อนหลัง)
+async function cancelOrders(req, env) {
+  const body = await req.json().catch(() => ({}));
+  const ids = Array.isArray(body.ids) ? body.ids.filter(Number.isInteger).slice(0, 100) : [];
+  if (!ids.length) return json({ error: 'bad body' }, 400);
+  const rows = await all(env, `SELECT id, ticker, status, decided_at FROM orders WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids);
+  const ok = [], late = [];
+  for (const o of rows) {
+    if (o.status !== 'approved' || !o.decided_at) continue;
+    (Date.now() < fillOpenMs(o.decided_at) ? ok : late).push(o);
+  }
+  if (ok.length) await env.DB.batch(ok.map(o => env.DB.prepare("UPDATE orders SET status='cancelled', note='เจ้าของยกเลิกก่อนตลาดเปิด' WHERE id=? AND status='approved'").bind(o.id)));
+  if (ok.length) await logStmt(env, 'owner', `ยกเลิก ${ok.length} ออเดอร์ที่อนุมัติแล้ว (เว็บ)`, { ids: ok.map(o => o.id) }).run();
+  if (!ok.length && late.length) return json({ error: 'เลยเวลาตลาดเปิดแล้ว ออเดอร์ถือว่าซื้อขายไปแล้ว ยกเลิกไม่ได้' }, 400);
+  return json({ cancelled: ok.length, too_late: late.map(o => o.ticker) });
+}
 async function decide(req, env) {
   const body = await req.json().catch(() => ({}));
   const ids = Array.isArray(body.ids) ? body.ids.filter(Number.isInteger).slice(0, 100) : [];
@@ -464,6 +497,7 @@ export default {
       }
       if (req.method === 'POST') {
         if (p === '/api/orders/decide') return decide(req, env);
+        if (p === '/api/orders/cancel') return cancelOrders(req, env);
         if (p === '/api/kill') return kill(env);
         if (p === '/api/resume') return resume(env);
         if (p === '/api/run') return runAgents(req, env);

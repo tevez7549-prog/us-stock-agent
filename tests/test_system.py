@@ -134,6 +134,16 @@ def edgar_test():
         edgar._get = orig
 
 
+def timing_test():
+    """แพ็กเกจรายสัปดาห์ใช้ราคาปิดวันศุกร์เท่านั้น (ศุกร์หยุด → พฤหัส เมื่อรันเสาร์/อาทิตย์)"""
+    T = pd.Timestamp
+    assert orchestrator._is_week_close(T("2026-10-23"))                          # ศุกร์
+    assert not orchestrator._is_week_close(T("2026-10-21"), T("2026-10-22 10:00"))   # พุธ กลางสัปดาห์
+    assert orchestrator._is_week_close(T("2026-04-02"), T("2026-04-04 10:00"))   # พฤหัส + ศุกร์หยุด รันวันเสาร์
+    assert not orchestrator._is_week_close(T("2026-04-02"), T("2026-04-03 10:00"))
+    print("[7] เวลา: แพ็กเกจจากราคาปิดวันศุกร์เท่านั้น (ศุกร์หยุด → พฤหัส)")
+
+
 def ai_test():
     d = data_agent.clean(data_agent.synthetic(seed=7))
     d["source"] = "synthetic"
@@ -226,6 +236,7 @@ if __name__ == "__main__":
     lookahead_test()
     risk_test()
     edgar_test()
+    timing_test()
     ai_test()
     consistency_test()
     paper.reset()
