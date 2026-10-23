@@ -1,4 +1,4 @@
-"""ช่วงโควิดมีผลแค่ไหน: ผลรายปี + ช่วง 2021-01..2024-10 (ตัดปี 2020) ของแบบหลักๆ ที่ทดสอบวันนี้ — ผล: D1 'research_by_year'"""
+"""ช่วงโควิดมีผลแค่ไหน: ผลรายปี + ปี 2020 + ช่วง 2021-01..2024-10 (ตัดปี 2020) ของแบบหลักๆ — ผล: D1 'research_by_year'"""
 import csv
 import io
 import json
@@ -21,9 +21,8 @@ def main():
             rows = q.company_records(m["cik"])
             if rows:
                 q.FUND[t] = q.pd.DataFrame(rows)
-    grid = {"Momentum (ซื้อหลังเข้าดัชนี)": (PIT(momentum), "weekly"), "LV3 ผันผวนต่ำ 20": (PIT(LowVol(20, False)), "monthly"),
-            "Q3 คุณภาพ+โมเมนตัม": (PIT(q.Quality(20, "qm")), "monthly"), "E1 EMA เรียงตัว": (PIT(ts.Signals("e1")), "weekly"),
-            "E3 EMA+Stochastic": (PIT(ts.Signals("e3")), "weekly")}
+    grid = {"Momentum": (PIT(momentum), "weekly"), "LV3": (PIT(LowVol(20, False)), "monthly"),
+            "Q3": (PIT(q.Quality(20, "qm")), "monthly"), "E1": (PIT(ts.Signals("e1")), "weekly"), "E3": (PIT(ts.Signals("e3")), "weekly")}
     out = {"created": paper.now_th(), "variants": {}}
     for name, (mod, cad) in grid.items():
         res = backtest_agent.run(d, strategy_module=mod, cadence=cad, portfolio="momentum")
