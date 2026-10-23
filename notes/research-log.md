@@ -69,3 +69,28 @@ Verdict: no variant passes; holdout stays sealed. Quality as defined here does n
 after costs. Caveats: annual data only (slow to update), equal weights, regime cut applies, removed constituents
 missing. Overall conclusion of the day: none of momentum, low-vol or quality stock picking beat SPY honestly.
 Recommendation given to the owner: SPY core (70–90%) + small satellite for systems still being forward-tested.
+
+## 2026-10-23 (4) — Donchian and EMA 20/50/100/200 + RSI + Stochastic (owner's idea)
+
+Weekly check (signals inside the last 5 trading days count), next-open fills, max 10 stocks equal weight × regime exposure,
+lowest-volatility first when more signals than slots, point-in-time S&P membership, Risk Manager + costs.
+Only open/close prices are available, so Donchian channels and Stochastic use closes. Script: research/trend_signals.py.
+Holdout sealed (no variant passed).
+
+| Variant | Search CAGR / Sharpe / MaxDD | Validate CAGR / Sharpe / MaxDD | Turnover/yr | Pass? |
+|---|---|---|---|---|
+| SPY | 13.2% / 0.92 / -19.4% | 14.7% / 0.69 / -33.7% | – | – |
+| DC1 Donchian 55/20 | 4.5% / 0.49 / -14.7% | 2.1% / 0.22 / -17.8% | 746% | no |
+| DC2 Donchian 100/50 | 7.1% / 0.73 / -14.8% | 0.7% / 0.07 / -18.1% | 367% | no |
+| DC3 Donchian 20/10 | 3.5% / 0.39 / -15.3% | -1.1% / -0.11 / -18.5% | 1226% | no |
+| DC4 Donchian 55/20 on SPY only | -0.7% / -0.11 / -24.0% | 0.9% / 0.13 / -20.3% | 537% | no |
+| E1 EMA 20>50>100>200 | 9.2% / 1.02 / -12.3% | 5.5% / 0.52 / -14.7% | 374% | no (validate) |
+| E2 + RSI14 < 40 | 8.6% / 0.87 / -12.4% | 2.5% / 0.24 / -19.4% | 554% | no |
+| E3 + Stoch %K crosses %D from < 20 | 10.2% / 1.05 / -12.5% | 0.8% / 0.09 / -20.9% | 436% | no |
+| E4 + RSI and Stoch | 9.8% / 0.95 / -13.4% | 4.1% / 0.41 / -18.2% | 538% | no |
+
+DC4 looked implausibly low, so it was re-checked with an independent vectorized simulation (research/spy_donchian_check.py):
+weekly 55/20 on SPY with 0.2% per side ≈ 2.2%/yr (0.8% in 2011–2019), daily ≈ 3.3%/yr, no-cost weekly ≈ 3.6%/yr,
+vs SPY 14%/yr — consistent: in 2011–2026 SPY's many 20-day-low pullbacks forced exits and re-entries at higher
+55-day highs (whipsaw). Verdict: none pass; EMA-stack variants looked good in 2011–2019 (Sharpe ≈ 1.0, DD −12%)
+but broke down in 2020–2024. Adding RSI/Stoch timing did not help versus the EMA stack alone.
