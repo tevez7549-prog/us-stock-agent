@@ -28,3 +28,24 @@ ETF-only momentum is clearly worse than SPY.
 Caveats: no point-in-time membership for removals; one cost model; the holdout includes the 2025–26 chip rally.
 Next: keep the live paper test running (live trading has no survivorship issue); consider showing E instead of B
 on the web Backtest tab; possible research: monthly rebalance / wider hold buffer to cut turnover.
+
+## 2026-10-23 (2) — Low volatility and monthly Momentum (all point-in-time by S&P "Date added")
+
+Grid fixed before running, monthly rebalance (last Friday of the month), regime + Risk Manager + costs as live.
+Holdout sealed in the run; opened only for variants that passed SEARCH and VALIDATE. Script: research/lowvol_monthly.py.
+
+| Variant | Search CAGR / Sharpe / MaxDD | Validate CAGR / Sharpe / MaxDD | Pass? | Holdout CAGR / Sharpe / MaxDD |
+|---|---|---|---|---|
+| SPY | 13.2% / 0.92 / -19.4% | 14.7% / 0.69 / -33.7% | – | 16.3% / 0.99 / -18.8% |
+| LV1 low-vol 10, above SMA200 | 8.2% / 0.95 / -11.2% | 7.8% / 0.85 / -10.8% | yes | 4.4% / 0.49 / -10.3% |
+| LV2 low-vol 20, above SMA200 | 8.1% / 0.90 / -12.8% | 7.6% / 0.78 / -11.7% | no (search Sharpe < SPY) | sealed |
+| LV3 low-vol 20, no trend filter | 9.5% / 1.08 / -10.6% | 8.0% / 0.85 / -12.5% | yes | 5.0% / 0.55 / -8.5% |
+| MM1 momentum 6, monthly | 13.2% / 0.78 / -23.6% | 12.4% / 0.58 / -20.8% | no | sealed |
+| MM2 momentum 12, monthly | 12.7% / 0.76 / -18.7% | 8.1% / 0.44 / -22.1% | no | sealed |
+
+Verdict: nothing here beats SPY on return. Low-vol (a coherent cluster: LV1–LV3 all similar) roughly halves the return
+(~8%/yr vs ~14%) with about a third of SPY's drawdown, and matched/beat SPY's Sharpe in 2011–2024 — but in the
+holdout (2024-10..2026-10 bull market) it lagged badly (Sharpe ~0.5 vs 0.99), so it fails the holdout test.
+Monthly momentum is below SPY risk-adjusted. Turnover still high (185–370%/yr).
+SEC EDGAR access confirmed 2026-10-23 (User-Agent with the owner's email) → quality/value tests with point-in-time
+fundamentals are now possible.
