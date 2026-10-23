@@ -327,7 +327,9 @@ async function openStock(t){
 function drawStock(){
   if (!STK) return;
   if (!stkC){ const c = LightweightCharts.createChart($("stkChart"), chartOpts);
-    stkC = {c, line: c.addAreaSeries({lineColor:"#5b9dff", topColor:"rgba(91,157,255,.25)", bottomColor:"rgba(91,157,255,0)", lineWidth:2}), cost: null}; }
+    stkC = {c, line: c.addAreaSeries({lineColor:"#5b9dff", topColor:"rgba(91,157,255,.25)", bottomColor:"rgba(91,157,255,0)", lineWidth:2}), cost: null,
+      // จุดซื้อขายวางที่ "ราคาที่ได้จริง" (ราคาเปิด) ไม่ใช่ราคาปิดของวันนั้น — ซีรีส์แยกที่มีแค่จุด ไม่มีเส้น
+      fills: c.addLineSeries({lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:4, color:"#f2f2f2", lastValueVisible:false, priceLineVisible:false, crosshairMarkerVisible:false})}; }
   let pts = STK.closes.slice(-stkDays).map(([d,v]) => ({time:d, value:v}));
   const live = LIVE[STK.ticker] && LIVE[STK.ticker].price, today = new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   if (live && pts.length && pts[pts.length-1].time < today) pts = pts.concat([{time: today, value: live}]);
@@ -336,8 +338,12 @@ function drawStock(){
   const pos = STK.position, avg = pos && pos.shares ? pos.cost_usd / pos.shares : null;
   if (avg) stkC.cost = stkC.line.createPriceLine({price: avg, color:"#f2b84b", lineWidth:1, lineStyle:2, axisLabelVisible:true, title:"ต้นทุนเฉลี่ย"});
   const first = pts.length ? pts[0].time : "";
-  stkC.line.setMarkers(STK.fills.filter(f => f.date >= first).map(f => ({time:f.date, position: f.side === "BUY" ? "belowBar" : "aboveBar", color: f.side === "BUY" ? "#22c38e" : "#f0596a",
+  const fl = STK.fills.filter(f => f.date >= first), byDay = {};
+  fl.forEach(f => byDay[f.date] = f);   // วันเดียวกันมีได้จุดเดียวต่อซีรีส์ (ซื้อ/ขายตัวเดียวกันวันเดียวกันเกิดได้ยาก)
+  stkC.fills.setData(Object.values(byDay).sort((a,b) => a.date < b.date ? -1 : 1).map(f => ({time:f.date, value:f.price})));
+  stkC.fills.setMarkers(fl.map(f => ({time:f.date, position: f.side === "BUY" ? "belowBar" : "aboveBar", color: f.side === "BUY" ? "#22c38e" : "#f0596a",
     shape: f.side === "BUY" ? "arrowUp" : "arrowDown", text: `${f.side === "BUY" ? "ซื้อ" : "ขาย"} ${fmt(f.price)}`})));
+  stkC.line.setMarkers([]);
   stkC.c.timeScale().fitContent();
   const last = pts.length ? pts[pts.length-1].value : null, p0 = pts.length ? pts[0].value : null;
   $("stkInfo").innerHTML = !pts.length ? "ยังไม่มีราคาย้อนหลัง — จะมีหลังรอบรายวันครั้งถัดไป"
