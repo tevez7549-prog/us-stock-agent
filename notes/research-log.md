@@ -49,3 +49,23 @@ holdout (2024-10..2026-10 bull market) it lagged badly (Sharpe ~0.5 vs 0.99), so
 Monthly momentum is below SPY risk-adjusted. Turnover still high (185–370%/yr).
 SEC EDGAR access confirmed 2026-10-23 (User-Agent with the owner's email) → quality/value tests with point-in-time
 fundamentals are now possible.
+
+## 2026-10-23 (3) — Quality from SEC annual reports (point-in-time by filing date)
+
+Data: SEC XBRL companyfacts for 500 of 503 S&P members (missing XOM, HONA, VYLR), 10-K annual figures only,
+usable from the first filing date; latest report with fiscal year end ≤ 550 days old. Score = mean percentile of
+gross profit/assets, ROA, −liabilities/assets. Monthly, point-in-time S&P membership by "Date added". Script: research/quality.py.
+Grid fixed before running; Q4 was planned as top 50 but 2% per stock never clears min_trade_weight (2%), so 40 was used.
+
+| Variant | Search CAGR / Sharpe / MaxDD | Validate CAGR / Sharpe / MaxDD | Pass? |
+|---|---|---|---|
+| SPY | 13.2% / 0.92 / -19.4% | 14.7% / 0.69 / -33.7% | – |
+| Q1 quality top 20 | 8.6% / 0.66 / -17.7% | 8.9% / 0.65 / -22.5% | no |
+| Q2 quality top 20, above SMA200 | 9.8% / 0.74 / -15.9% | 6.2% / 0.47 / -25.2% | no |
+| Q3 top-quartile quality → top 20 momentum | 12.2% / 0.84 / -17.0% | 8.6% / 0.50 / -18.0% | no |
+| Q4 quality top 40 | 10.4% / 0.95 / -16.2% | 6.1% / 0.47 / -22.6% | no (validate) |
+
+Verdict: no variant passes; holdout stays sealed. Quality as defined here does not beat SPY on large US stocks
+after costs. Caveats: annual data only (slow to update), equal weights, regime cut applies, removed constituents
+missing. Overall conclusion of the day: none of momentum, low-vol or quality stock picking beat SPY honestly.
+Recommendation given to the owner: SPY core (70–90%) + small satellite for systems still being forward-tested.
