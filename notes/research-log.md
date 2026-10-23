@@ -94,3 +94,18 @@ weekly 55/20 on SPY with 0.2% per side ≈ 2.2%/yr (0.8% in 2011–2019), daily 
 vs SPY 14%/yr — consistent: in 2011–2026 SPY's many 20-day-low pullbacks forced exits and re-entries at higher
 55-day highs (whipsaw). Verdict: none pass; EMA-stack variants looked good in 2011–2019 (Sharpe ≈ 1.0, DD −12%)
 but broke down in 2020–2024. Adding RSI/Stoch timing did not help versus the EMA stack alone.
+
+## 2026-10-23 (5) By-year / Covid impact and sector-only systems (research/by_year.py, research/sectors.py)
+By year (PIT, net of costs): 2020 SPY +18.3% vs Mom +3.0, LV3 +7.1, Q3 +18.3, E1 −3.9, E3 −9.7;
+2022 SPY −18.2% vs LV3 −0.2, Q3 −15.3, E1 −6.1, Mom −4.7. Ex-Covid 2021-01..2024-10 CAGR/Sharpe/DD:
+Mom 6.2/0.37/−24.9, LV3 8.3/0.95/−11.2, Q3 7.3/0.43/−17.6, E1 8.3/0.87/−14.4, E3 3.9/0.47/−20.7, SPY 14.4/0.87/−24.5.
+→ Covid hurt trend systems, but the bigger gap is strong up-years (2019, 2023). None beat SPY even ex-2020.
+Sectors (11 GICS groups × MOM and EMA, vs SPY and equal-weight of the group): none pass. In every group the
+equal-weight hold of the group beat the stock-picking rule (e.g. tech EW 21.1%/yr). Staples EMA passed validate
+but failed search. Holdouts stay sealed (not reported).
+
+## 2026-10-23 (6) Classic indicators — owner's list (research/classic_indicators.py), grid fixed before running
+BB1 pullback below lower band (20,2) above SMA200 → exit above mid; BB2 close above upper band → exit below mid;
+SAR Parabolic SAR (0.02/0.2) flip up → exit on flip down; ICH close above cloud + Tenkan>Kijun → exit below Kijun;
+FIB above SMA200 and inside 50–61.8% retracement of the 60-day swing → exit above prior high or below 78.6%.
+Weekly check, max 10 equal-weight × regime exposure, low-vol first, PIT, same Risk Manager/costs. High/low from Yahoo.
