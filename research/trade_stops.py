@@ -38,7 +38,7 @@ def atr14(H, L, C):
     return tr.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
 
 
-def simulate(C, O, H, L, A, spy_ok, entry_ok, trail=5.0, tp_mode=None, start="2011-01-01", rng=None):
+def simulate(C, O, H, L, A, spy_ok, entry_ok, trail=5.0, tp_mode=None, start="2011-01-01", rng=None, weight=None, maxpos=MAXPOS):
     """entry_ok: DataFrame bool (วันสัญญาณ) · คืน equity รายวัน + รายการไม้"""
     tickers = list(C.columns)
     Cn, On, Hn, Ln, An = (x.to_numpy() for x in (C, O, H, L, A))
@@ -53,10 +53,10 @@ def simulate(C, O, H, L, A, spy_ok, entry_ok, trail=5.0, tp_mode=None, start="20
         # 1) เปิดไม้ที่สัญญาณเมื่อวาน ที่ราคาเปิดวันนี้
         for j, sl_dist, tp in pending:
             px = On[i, j]
-            if px != px or len(pos) >= MAXPOS or j in pos:
+            if px != px or len(pos) >= maxpos or j in pos:
                 continue
             equity_now = cash + sum(p["sh"] * (Cn[i - 1, k] if Cn[i - 1, k] == Cn[i - 1, k] else p["px"]) for k, p in pos.items())
-            sh = int(equity_now * RISK // sl_dist)
+            sh = int(equity_now * weight // (px * (1 + FEE))) if weight else int(equity_now * RISK // sl_dist)   # weight = แบ่งทุนเท่ากัน (แนวพอร์ตเดิม)
             cost = sh * px * (1 + FEE)
             if sh <= 0 or cost > cash:
                 sh = int(cash / (px * (1 + FEE)))
@@ -92,7 +92,7 @@ def simulate(C, O, H, L, A, spy_ok, entry_ok, trail=5.0, tp_mode=None, start="20
         if not spy_ok[i]:
             continue
         cands = [j for j in np.nonzero(E[i])[0] if j not in pos and An[i, j] == An[i, j] and An[i, j] > 0]
-        room = MAXPOS - len(pos)
+        room = maxpos - len(pos)
         if room <= 0 or not cands:
             continue
         if rng is not None:
@@ -143,19 +143,28 @@ def main():
     brk = {n: (C > H.shift(1).rolling(n).max()) & base for n in (20, 55)}
     out = {"created": paper.now_th(), "source": src, "data_last": str(C.index[-1].date()), "stocks": len(stocks), "variants": {}}
     grid = {"S1": dict(entry=brk[55], trail=5.0), "S2": dict(entry=brk[20], trail=5.0), "S3": dict(entry=brk[55], trail=6.0),
-            "S4": dict(entry=brk[55], trail=5.0, tp_mode="res")}
+            "S4": dict(entry=brk[55], trail=5.0, tp_mode="res"),
+            # รอบ 2 (เจ้าของ 2026-10-24 20:17): ตัด 1% ออก แบ่งทุนเท่ากันแบบพอร์ตเดิม ถือเต็มได้ 100%
+            "W1": dict(entry=brk[55], trail=6.0, weight=0.05, maxpos=20),               # S3 แต่ไม้ละ 5%
+            "W2": dict(entry=brk[55], trail=5.0, tp_mode="res", weight=0.05, maxpos=20), # S4 แต่ไม้ละ 5%
+            "W3": dict(entry=brk[55], trail=6.0, weight=0.10, maxpos=10)}               # 10 ไม้ × 10%
+    only = os.environ.get("ONLY")
     for name, g in grid.items():
-        e, st, tr = simulate(C, O, H, L, A, spy_ok, g["entry"], trail=g["trail"], tp_mode=g.get("tp_mode"))
+        if only and name not in only.split(","):
+            continue
+        e, st, tr = simulate(C, O, H, L, A, spy_ok, g["entry"], trail=g["trail"], tp_mode=g.get("tp_mode"),
+                             weight=g.get("weight"), maxpos=g.get("maxpos", MAXPOS))
         per = periods(e)
         out["variants"][name] = {**st, "search": per["search"], "validate": per["validate"], "holdout_sealed": per["holdout"],
                                  "by_year": {int(y.year): round(float(v), 2) for y, v in (e.resample("YE").last().pct_change() * 100).dropna().items()},
                                  "last_trades": tr[-10:]}
         print(name, json.dumps(st), json.dumps(per["search"]), json.dumps(per["validate"]), flush=True)
     rows = []
+    rweight = 0.05 if only and only.startswith("W") else None
     for seed in range(SEEDS):
-        e, st, _ = simulate(C, O, H, L, A, spy_ok, base, trail=5.0, rng=np.random.default_rng(seed))
+        e, st, _ = simulate(C, O, H, L, A, spy_ok, base, trail=6.0 if rweight else 5.0, rng=np.random.default_rng(seed), weight=rweight)
         rows.append({"stats": st, **periods(e)})
-    summ = {}
+    summ = {"sizing": "weight 5%" if rweight else "risk 1%"}
     for k in ("search", "validate", "holdout"):
         v = [r[k]["cagr"] for r in rows if r[k]]
         s = [r[k]["sharpe"] for r in rows if r[k] and r[k]["sharpe"] is not None]
@@ -167,7 +176,7 @@ def main():
     sp = spy.loc[spy.index >= pd.Timestamp("2011-01-01")]
     sper = periods(sp / sp.iloc[0] * CAP)
     out["spy"] = {"search": sper["search"], "validate": sper["validate"], "holdout_sealed": sper["holdout"]}
-    paper.put("research_trade_stops", out, shared=True)
+    paper.put("research_trade_stops" + ("_w" if only and only.startswith("W") else ""), out, shared=True)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,9 @@ on:
       script:
         description: "โมดูลใน research/ เช่น random_baseline"
         default: random_baseline
+      only:
+        description: "ตัวแปร ONLY (เช่น W1,W2,W3) ว่าง = ทั้งหมด"
+        default: ""
 
 permissions:
   contents: read
@@ -19,6 +22,7 @@ jobs:
     env:
       WORKER_URL: https://us-stock-agent.tevez7549.workers.dev
       TZ: Asia/Bangkok
+      ONLY: ${{ github.event.inputs.only }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -170,3 +170,6 @@ carry the edge — random entries reach PF 1.76 and 7.9%/yr; Donchian entries ad
 in search). TP-at-resistance (S4) had higher win rate but lower avg R than trailing (S3), roughly equal Sharpe.
 Positive PF every period (1.5–2.5) means the rule makes money in R terms but, long-only with ≤20 × 1% risk, it stays
 under-invested versus buy-and-hold in strong up-years (2014, 2024). Holdouts stay sealed.
+Round 2 (owner 2026-10-24: drop the 1% sizing, size like the portfolios): W1 = S3 rules, 5% of equity per position,
+≤ 20 (fully invested possible); W2 = S4 rules, 5% × 20; W3 = S3 rules, 10% × 10. Random entries re-run with 5%
+sizing + trail 6 as the baseline. Same pass rule. Results in D1 'research_trade_stops_w'.
