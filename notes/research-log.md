@@ -173,3 +173,9 @@ under-invested versus buy-and-hold in strong up-years (2014, 2024). Holdouts sta
 Round 2 (owner 2026-10-24: drop the 1% sizing, size like the portfolios): W1 = S3 rules, 5% of equity per position,
 ≤ 20 (fully invested possible); W2 = S4 rules, 5% × 20; W3 = S3 rules, 10% × 10. Random entries re-run with 5%
 sizing + trail 6 as the baseline. Same pass rule. Results in D1 'research_trade_stops_w'.
+Round 2 result: W1 9.5/0.73/−21.4 · 14.4/0.92/−17.2 (PF 1.93/2.16); W2 5.8/0.49/−20.5 · 13.5/0.88/−17.7;
+W3 9.5/0.69/−24.4 · 14.5/0.83/−21.1. Random (5% sizing) median 9.0 · 6.0, p95 10.6 · 11.1.
+W1 passes validate (Sharpe 0.92 vs 0.69, DD half of SPY, CAGR ≈ SPY) and beats random > p95 there, but fails search
+(Sharpe 0.73 vs 0.92, DD deeper, CAGR 9.5 vs 13.1, ≈ random median). Verdict: none pass. Equal-weight sizing raised
+CAGR vs 1% sizing (W1 vs S3: +2.3%/yr validate, same DD) — the under-investment diagnosis was right — but 2011–2019
+(steady bull, few deep pullbacks) still favours buy-and-hold. Holdouts stay sealed.
