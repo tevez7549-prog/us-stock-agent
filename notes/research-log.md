@@ -140,3 +140,13 @@ G2 = G1 + above SMA200 + net income up YoY → top 20 by g0; G3 = G2 filter → 
 (all eligible, min trade weight 0) and R (random 20, 20 seeds). Monthly, next open, equal weight × regime exposure,
 same Risk Manager/costs. Pass = Sharpe ≥ SPY and clearly smaller DD in search and validate, and CAGR above the
 random p90 in both. Holdout sealed.
+Result (search 2011–19 / validate 2020-01..2024-10, CAGR/Sharpe/DD; SPY 13.2/0.92/−19.4 · 14.7/0.69/−33.7):
+U1 (903 names): EW 11.3/0.91/−19.7 · 19.2/1.03/−16.1; G1 17.6/1.13/−20.3 · 20.9/1.13/−18.1; G2 13.5/0.89/−19.4 ·
+17.4/1.02/−16.2; G3 14.9/0.93/−19.4 · 20.0/1.02/−17.9; random-20 median 5.0 · 6.4 (p90 6.6 · 12.0).
+U2 (254 → 670 names over time): EW 9.3/0.80/−17.5 · 7.8/0.61/−16.7; G1 11.4/0.85/−17.7 · 10.0/0.60/−21.9;
+G2 11.1/0.95/−13.0 · 15.5/0.96/−15.8; G3 10.6/0.90/−12.8 · 11.2/0.66/−17.6; random median 3.7 · 3.8 (p90 5.6 · 7.7).
+U1-G1 and U1-G3 failed only on DD in search (not smaller than SPY). U2-G2 passed every pre-registered test → holdout
+opened per the rule: U2-G2 holdout (2024-10-23..2026-10-23) 1.0%/0.04/−25.2% vs SPY 16.0/0.97/−18.8, EW U2 6.5%,
+random median 2.2% → FAILS the holdout. Verdict: no variant passes. Caveat: random-20 re-draws every month
+(much higher turnover/costs than G*), so the random gap is overstated by roughly 3%/yr; verdict unchanged.
+Growth signals clearly beat random and EW in 2011–2024 but not in the last two years (mega-cap led market).
