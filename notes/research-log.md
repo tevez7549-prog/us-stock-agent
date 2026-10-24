@@ -150,3 +150,12 @@ opened per the rule: U2-G2 holdout (2024-10-23..2026-10-23) 1.0%/0.04/−25.2% v
 random median 2.2% → FAILS the holdout. Verdict: no variant passes. Caveat: random-20 re-draws every month
 (much higher turnover/costs than G*), so the random gap is overstated by roughly 3%/yr; verdict unchanged.
 Growth signals clearly beat random and EW in 2011–2024 but not in the last two years (mega-cap led market).
+
+## 2026-10-24 (9) forex-agent G1 rules on S&P 500 stocks, daily, long-only (research/trade_stops.py), grid fixed before running
+Owner's forex doc: Donchian 55 (H4) + D1 EMA200 filter, SL 3 ATR, trail 5 ATR, 1% risk per trade, no TP; the doc itself
+reports G1 failed on 11 stock indices. New per-trade simulator (daily bars, stops checked against Low, gap through stop
+exits at Open, entries/exits at next open, ≤ 20 open positions, size = 1% equity ÷ 3 ATR, PIT S&P 500, SPY > SMA200
+market filter). S1 N55 trail5 · S2 N20 trail5 · S3 N55 trail6 · S4 N55 fixed SL + TP at prior 250-day high (else 2R)
+(owner prefers TP at resistance; the doc says the trailing exit gave half the edge — the grid lets the data decide) ·
+R random entries, same exit/sizing, 20 seeds (the doc's method to split entry edge from exit edge). Pass = Sharpe ≥ SPY
+and clearly smaller DD in search and validate, beats random ≥ 95%. Holdout sealed.
