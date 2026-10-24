@@ -28,7 +28,14 @@ def download():
     import yfinance as yf
     tk = list(A.values()) + list(B.values()) + ["SPY", "SHY"]
     raw = yf.download(tk, start=config.DATA_START, auto_adjust=True, progress=False, group_by="column", threads=True)
-    return raw["Close"][tk], raw["Open"][tk]
+    C, O = raw["Close"][tk], raw["Open"][tk]
+    ok = C["SPY"].notna()                      # ตัดวันที่ยังไม่มีราคาปิด (เช่นวันล่าสุดที่ยังไม่จบ)
+    C, O = C[ok], O[ok]
+    first = C.apply(lambda s: s.first_valid_index())
+    C = C.ffill()                              # วันหยุดย่อยของบางกอง = ใช้ราคาเดิม
+    for t, d0 in first.items():
+        C.loc[:d0 - pd.Timedelta(days=1), t] = np.nan   # ก่อนกองเกิด = ไม่มีให้เลือก
+    return C, O
 
 
 def rebalance_days(idx, months):
