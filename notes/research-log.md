@@ -113,3 +113,10 @@ Result (search 2011–19 / validate 2020–24, CAGR/Sharpe/DD; SPY 13.2/0.92/−
 BB1 2.1/0.23/−19.5 · 0.7/0.08/−16.3; BB2 4.2/0.44/−16.5 · 5.0/0.50/−18.8; SAR 2.3/0.26/−17.0 · −1.2/−0.13/−18.4;
 ICH 8.0/0.86/−13.3 · 4.6/0.46/−16.8; FIB 8.4/0.85/−11.7 · 3.5/0.32/−18.5. Turnover 850–1500%/yr (one-sided).
 Verdict: none pass (all fail validate Sharpe; ICH/FIB were close in search only). Holdouts stay sealed.
+
+## 2026-10-24 (7) Sector ETF rotation — owner's request (research/sector_etfs.py), grid fixed before running
+Families A = Select Sector SPDR (S&P 500 only), B = Vanguard sector (total market), C = mix (per sector the
+stronger of the A/B pair). Rules EW (all sectors equal), TOP3 (score = mean of 3/6/12-month returns), TOP3T
+(TOP3, sector below its 200-day SMA → SHY). Rebalance every 1/3/6 months, signal at period-end close, trade next
+open, config.COSTS per side, ETFs only after they exist (XLRE 2015, XLC 2018). 27 variants. AI not backtested
+(it knows which sectors won).
