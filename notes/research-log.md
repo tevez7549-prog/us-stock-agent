@@ -128,3 +128,15 @@ TOP3T: A-1m 5.7/0.42/−19.8 · 11.9/0.71/−20.9; B-1m 6.3/0.45/−23.6 · 15.0
 vs 0.92, 2011–2016 lagged badly); TOP3T-1m looked strong 2020–24 only (2022 +6% vs SPY −18%). A vs B vs mix: no real
 difference. Holdouts stay sealed. (First run had a trailing-NaN bug that only affected the last days; fixed and rerun,
 search/validate identical.)
+
+## 2026-10-24 (8) Growth stocks in wider markets — owner's request (research/growth_wide.py), grid fixed before running
+U1 = current S&P 500 + S&P 400 members (no S&P 400 history → survivorship; judged against random picks in the same
+universe). U2 = NYSE/Nasdaq US-GAAP filers with point-in-time market cap ≥ $10B (SEC cover-page shares, frames,
+usable 7 days after the as-of date, × split-adjusted price without dividend adjustment; pre-filter: total assets
+≥ $2B at some year-end; multi-class firms missing from frames count only while in the S&P 500; only firms listed
+today → survivorship). Signals from SEC quarterly revenue/net income, usable from first filed date, Q4 = annual − 3
+quarters; g = YoY growth of the latest quarter (≤ 200 days old). G1 g0 > 10% and g0 > g1 > g2 → top 20 by g0;
+G2 = G1 + above SMA200 + net income up YoY → top 20 by g0; G3 = G2 filter → top 20 by 6/12m momentum. Baselines EW
+(all eligible, min trade weight 0) and R (random 20, 20 seeds). Monthly, next open, equal weight × regime exposure,
+same Risk Manager/costs. Pass = Sharpe ≥ SPY and clearly smaller DD in search and validate, and CAGR above the
+random p90 in both. Holdout sealed.
