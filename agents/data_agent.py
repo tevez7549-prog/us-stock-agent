@@ -74,10 +74,11 @@ def synthetic(start="2012-01-02", years=14, seed=11, drift=True):
         mkt[s:s + 60] += rng.normal(-0.004, 0.012, 60)
     groups = {g: rng.normal(0, 0.006, n) for g in sorted({v["group"] for v in config.UNIVERSE.values()})}
     close, open_ = {}, {}
-    for t, meta in config.UNIVERSE.items():
+    # ETF รายกลุ่ม (kind sector) สุ่มทีหลังสุด → ข้อมูลจำลองของตัวอื่นเหมือนเดิมทุกตัว (ผลทดสอบเดิมไม่เปลี่ยน)
+    for t, meta in sorted(config.UNIVERSE.items(), key=lambda x: x[1]["kind"] == "sector"):
         k = meta["kind"]
-        beta = {"stock": 1.2, "etf": 1.0, "defensive": -0.25, "cash": 0.0}[k]
-        idio = {"stock": 0.014, "etf": 0.004, "defensive": 0.007, "cash": 0.0003}[k]
+        beta = {"stock": 1.2, "etf": 1.0, "sector": 1.0, "defensive": -0.25, "cash": 0.0}[k]
+        idio = {"stock": 0.014, "etf": 0.004, "sector": 0.004, "defensive": 0.007, "cash": 0.0003}[k]
         mu = (rng.normal(0.0001, 0.0002) if drift else 0) if k != "cash" else (0.00008 if drift else 0)
         r = mu + beta * mkt + (groups[meta["group"]] if k not in ("cash",) else 0) * (1 if k != "defensive" else 0.5) \
             + rng.normal(0, idio, n)

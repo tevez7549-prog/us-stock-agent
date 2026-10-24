@@ -1,4 +1,4 @@
--- ทุกตารางที่เป็น "ของพอร์ต" มีคอลัมน์ portfolio (ชื่อกลยุทธ์: momentum | dual_momentum | risk_parity | ai_pick) · ค่าที่ใช้ร่วมกันใช้ portfolio=''
+-- ทุกตารางที่เป็น "ของพอร์ต" มีคอลัมน์ portfolio (ชื่อกลยุทธ์: momentum | dual_momentum | risk_parity | ai_pick | ai_sector) · ค่าที่ใช้ร่วมกันใช้ portfolio=''
 CREATE TABLE IF NOT EXISTS state (portfolio TEXT NOT NULL DEFAULT '', key TEXT, value TEXT, PRIMARY KEY (portfolio, key));
 CREATE TABLE IF NOT EXISTS positions (portfolio TEXT NOT NULL DEFAULT '', ticker TEXT, shares REAL, cost_usd REAL, PRIMARY KEY (portfolio, ticker));
 CREATE TABLE IF NOT EXISTS packets (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio TEXT NOT NULL DEFAULT '', created TEXT, signal_date TEXT, status TEXT, data TEXT, audit TEXT, report TEXT, UNIQUE (portfolio, signal_date));

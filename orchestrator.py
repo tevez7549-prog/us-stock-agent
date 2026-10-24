@@ -19,7 +19,7 @@ import paper
 from agents import data_agent, regime_agent, news_agent, macro_agent, risk_agent, auditor_agent, reporter_agent
 from strategies import PORTFOLIOS
 
-RISKY = ("etf", "stock")
+RISKY = config.RISKY_KINDS
 NEWS_TOP = 30   # อ่านข่าวหุ้นโมเมนตัมสูงสุดกี่ตัว (นอกจากตัวที่ถืออยู่)
 
 
@@ -291,7 +291,7 @@ def _weekly_one(d, ctx, as_of):
               "held_risky": held_risky, "news": news, "macro": macro,
               "news_items": {t: (dig or {}).get("stocks", {}).get(t, {}).get("items", [])
                              for t in sorted(set(target) | set(pos)) if (dig or {}).get("stocks", {}).get(t, {}).get("items")}, "risk_log": fin["log"], "ranking": prop["ranking"],
-              "ai_view": prop.get("view"), "ai_research": prop.get("research"), "prev_regime": paper.get("prev_regime"), "quality": quality,
+              "ai_view": prop.get("view"), "ai_research": prop.get("research"), "rule_weights": prop.get("rule"), "prev_regime": paper.get("prev_regime"), "quality": quality,
               "data_source": d.get("source")}
     audit = auditor_agent.audit(packet, d, quality)
     report = reporter_agent.write(packet, audit)

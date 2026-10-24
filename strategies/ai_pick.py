@@ -105,7 +105,7 @@ class Research:
         n = max(1, min(int(n or 20), 40))
         rows = []
         for t, m in config.UNIVERSE.items():
-            if m["kind"] == "cash" or not self.valid(t):
+            if m["kind"] in ("cash", "sector") or not self.valid(t):   # sector = ของพอร์ต AI หมุนกลุ่ม
                 continue
             if kind != "all" and m["kind"] != kind and not (kind == "etf" and m["kind"] == "defensive"):
                 continue

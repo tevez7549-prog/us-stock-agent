@@ -56,7 +56,7 @@ def run(d, strategy=None, risk=None, costs=None, capital=config.START_CAPITAL_US
                 tgt[col[t]] = w * equity
             cur_w = np.where(equity > 0, val / equity, 0)
             delta = tgt - val
-            order = np.argsort(delta)  # ขายก่อน (delta ติดลบ) แล้วค่อยซื้อ
+            order = np.argsort(delta, kind="stable")  # ขายก่อน (delta ติดลบ) แล้วค่อยซื้อ · stable = ผลไม่ขึ้นกับจำนวนคอลัมน์
             for j in order:
                 if np.isnan(px[j]) or px[j] <= 0:
                     continue

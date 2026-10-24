@@ -169,7 +169,7 @@ async function finnhubKey(env) {
   if (s.key) { await putDoc(env, 'secrets', 'finnhub', { enc: await encrypt(env, s.key) }); return s.key; } // ย้ายของเก่าเป็นแบบเข้ารหัส
   return getSecret(env, 'finnhub');
 }
-const PORTFOLIOS = ['momentum', 'dual_momentum', 'risk_parity', 'ai_pick'];
+const PORTFOLIOS = ['momentum', 'dual_momentum', 'risk_parity', 'ai_pick', 'ai_sector'];
 
 // ---------- API: อ่าน ----------
 async function status(env) {

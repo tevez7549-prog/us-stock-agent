@@ -29,7 +29,7 @@ def apply(weights, drawdown=0.0, blocked=(), r=config.RISK, portfolio=None):
             log.append(f"{t}: ไม่อยู่ในรายชื่อที่อนุมัติ ตัดออก")
             w[cash] = w.get(cash, 0) + w.pop(t)
             continue
-        cap = r["max_stock"] if kind == "stock" else r["max_etf"] if kind in ("etf", "defensive") else 1.0
+        cap = r["max_stock"] if kind == "stock" else r["max_etf"] if kind in ("etf", "defensive", "sector") else 1.0
         if w[t] > cap:
             log.append(f"{t}: {w[t]:.1%} เกินเพดาน {cap:.0%} ลดลง")
             w[cash] = w.get(cash, 0) + w[t] - cap
@@ -53,7 +53,7 @@ def apply(weights, drawdown=0.0, blocked=(), r=config.RISK, portfolio=None):
     # 3) Drawdown ของพอร์ต → ลดของเสี่ยงลงครึ่งหนึ่ง
     if drawdown >= r["dd_cut_level"]:
         for t in list(w):
-            if config.info(t)["kind"] in ("etf", "stock"):
+            if config.info(t)["kind"] in config.RISKY_KINDS:
                 cut = w[t] * (1 - r["dd_cut_factor"])
                 w[t] -= cut
                 w[cash] = w.get(cash, 0) + cut
@@ -89,7 +89,7 @@ def check(weights, r=config.RISK, portfolio=None):
             continue
         if v < -tol:
             bad.append(f"{t} น้ำหนักติดลบ")
-        cap = r["max_stock"] if m["kind"] == "stock" else r["max_etf"] if m["kind"] in ("etf", "defensive") else 1
+        cap = r["max_stock"] if m["kind"] == "stock" else r["max_etf"] if m["kind"] in ("etf", "defensive", "sector") else 1
         if v > cap + tol:
             bad.append(f"{t} {v:.1%} เกินเพดาน {cap:.0%}")
         if m["group"] != "cash":

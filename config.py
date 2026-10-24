@@ -35,6 +35,10 @@ FIXED = {
     "IEF":  {"kind": "defensive", "group": "bond"},
     "GLD":  {"kind": "defensive", "group": "gold"},
     "SHY":  {"kind": "cash",      "group": "cash"},   # พันธบัตรระยะสั้น = แทนเงินสด
+    # ETF รายกลุ่มที่ใช้เฉพาะพอร์ต AI หมุนกลุ่ม (kind "sector" = กลยุทธ์อื่นมองไม่เห็น ผลของพอร์ตเดิมไม่เปลี่ยน)
+    "XLB":  {"kind": "sector", "group": "materials"},
+    "XLRE": {"kind": "sector", "group": "real_estate"},
+    "XLC":  {"kind": "sector", "group": "comm"},
 }
 GICS_GROUP = {
     "Information Technology": "tech", "Communication Services": "comm", "Consumer Discretionary": "consumer",
@@ -85,7 +89,12 @@ def info(t):
 set_stocks(read_sp500())
 # พอร์ตที่ไม่ต้องรอเจ้าของกดอนุมัติ (เจ้าของเลือกเอง 2026-10-22) — ยังผ่าน Risk Manager + ผู้ตรวจสอบเหมือนเดิม
 # ผู้ตรวจสอบไม่ผ่าน = ไม่อนุมัติอัตโนมัติ / Kill switch ยังหยุดได้ทุกพอร์ต
-AUTO_APPROVE = {"ai_pick"}
+AUTO_APPROVE = {"ai_pick", "ai_sector"}   # ai_sector: เจ้าของเลือก 2026-10-24
+# ตัวเลือกของ AI หมุนกลุ่ม (Select Sector SPDR = เฉพาะหุ้นใน S&P 500)
+SECTOR_ETFS = {"XLK": "เทคโนโลยี", "XLV": "สุขภาพ", "XLF": "การเงิน", "XLE": "พลังงาน", "XLY": "สินค้าฟุ่มเฟือย",
+               "XLP": "สินค้าจำเป็น", "XLI": "อุตสาหกรรม", "XLB": "วัตถุดิบ", "XLU": "สาธารณูปโภค", "XLRE": "อสังหาฯ",
+               "XLC": "สื่อสาร"}
+RISKY_KINDS = ("etf", "stock", "sector")   # ของเสี่ยงที่ Risk Manager / ผู้ตรวจสอบนับ
 
 BENCHMARK = "SPY"
 FX_TICKER = "THB=X"                    # บาทต่อ 1 ดอลลาร์ (Yahoo)
@@ -115,6 +124,7 @@ RISK = {
     "per_strategy": {
         "dual_momentum": {"max_etf": 1.0, "max_group": 1.0},
         "risk_parity":   {"max_etf": 0.40, "max_group": 0.40},
+        "ai_sector":     {"max_etf": 0.40, "max_group": 0.40},   # ถือได้กลุ่มละไม่เกิน 40%
     },
     "min_cash": 0.05,           # เงินสด/SHY อย่างน้อย 5%
     "dd_cut_level": 0.15,       # พอร์ตลงจากจุดสูงสุด 15% → ลดความเสี่ยงครึ่งหนึ่ง

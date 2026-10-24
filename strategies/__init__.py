@@ -6,7 +6,7 @@
 
 PORTFOLIOS = ลำดับที่แสดงบนเว็บ  key = ชื่อในฐานข้อมูล (ห้ามเปลี่ยนหลังเริ่ม forward test)
 """
-from strategies import momentum, dual_momentum, risk_parity, ai_pick
+from strategies import momentum, dual_momentum, risk_parity, ai_pick, ai_sector
 
 PORTFOLIOS = {
     "momentum": {
@@ -32,5 +32,11 @@ PORTFOLIOS = {
         "short": "ให้ Claude เลือก",
         "desc": "Claude เลือกพอร์ตเองจากข้อมูลตัวเลข ข่าว และมหภาค (ภายใต้ Risk Manager เดียวกัน) ปรับรายสัปดาห์",
         "module": ai_pick, "cadence": "weekly", "uses_ai": True,
+    },
+    "ai_sector": {
+        "name": "AI หมุนกลุ่ม",
+        "short": "Claude เลือกกลุ่มธุรกิจ",
+        "desc": "Claude เลือกสัดส่วน ETF 11 กลุ่มธุรกิจ (Select Sector SPDR) + SPY + SHY จากโมเมนตัม แนวโน้ม ข่าว และมหภาค ปรับรายเดือน อนุมัติอัตโนมัติ",
+        "module": ai_sector, "cadence": "monthly", "uses_ai": True,
     },
 }

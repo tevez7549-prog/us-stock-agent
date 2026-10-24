@@ -49,7 +49,7 @@ def audit(packet, d, quality):
             fails.append(f"น้ำหนัก {t} ไม่ตรงกับที่คำนวณซ้ำ (ต่าง {worst:.1%})")
     else:
         # กลยุทธ์ AI: คำนวณซ้ำไม่ได้ (คำตอบไม่คงที่) → ตรวจแค่ว่า Risk Manager บังคับกฎกับคำตอบของ AI แล้วจริง
-        risky_w = sum(w for t, w in packet["target"].items() if config.info(t)["kind"] in ("etf", "stock"))
+        risky_w = sum(w for t, w in packet["target"].items() if config.info(t)["kind"] in config.RISKY_KINDS)
         if risky_w > reg["exposure"] * packet.get("macro", {}).get("factor", 1.0) + 0.01 and reg["exposure"] < 1:
             warns.append(f"AI ถือของเสี่ยง {risky_w:.0%} มากกว่าที่สภาวะตลาดแนะนำ ({reg['exposure']:.0%})")
         for t in packet.get("news", {}).get("blocked", []):

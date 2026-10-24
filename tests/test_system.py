@@ -203,9 +203,18 @@ def ai_test():
         assert all(v for v in out.values()), out
         rows = {r["portfolio"]: (r["status"], json.loads(r["audit"])["status"]) for r in
                 paper.conn().execute("SELECT portfolio, status, audit FROM packets")}
-        print(f"[5] วงจรเต็ม 4 พอร์ต: {rows}")
+        print(f"[5] วงจรเต็มทุกพอร์ต: {rows}")
         assert rows["ai_pick"][1] != "fail" and all(v[0] in ("awaiting", "no_action", "decided") for v in rows.values()), rows
         assert rows["ai_pick"][0] == "decided", "AI Pick อนุมัติอัตโนมัติ (เจ้าของเลือก)"
+        assert rows["ai_sector"][0] in ("decided", "no_action") and rows["ai_sector"][1] != "fail", rows
+        from strategies import ai_sector
+        rs2 = ai_sector.Research(d["close"], ind, d["close"].index[-300], ())
+        sec = rs2.sectors()
+        assert len(sec["rows"]) == 11 and max(rs2.close.index) < future and sec["rule_top3_trend"], sec
+        assert rs2.valid("XLK") and rs2.valid("SPY") and not rs2.valid("NVDA") and not rs2.valid("TLT")
+        fin2 = rs2.check_risk({"XLK": 0.9, "NVDA": 0.1})["final_weights"]
+        assert fin2["XLK"] <= 0.40 + 1e-6 and "NVDA" not in fin2 and fin2["SHY"] >= 0.05 - 1e-6, fin2
+        print(f"[5] AI หมุนกลุ่ม: เห็น 11 กลุ่ม ไม่เห็นอนาคต · ขอ XLK 90% → ได้ {fin2['XLK']:.0%} · หุ้นรายตัวถูกตัด · อนุมัติอัตโนมัติ")
         st = {r["status"] for r in paper.conn().execute("SELECT status FROM orders WHERE portfolio='ai_pick'")}
         assert st == {"approved"}, st
         assert {r["status"] for r in paper.conn().execute("SELECT status FROM orders WHERE portfolio='momentum'")} == {"proposed"}, "พอร์ตอื่นยังต้องรอเจ้าของ"
