@@ -159,3 +159,14 @@ market filter). S1 N55 trail5 · S2 N20 trail5 · S3 N55 trail6 · S4 N55 fixed 
 (owner prefers TP at resistance; the doc says the trailing exit gave half the edge — the grid lets the data decide) ·
 R random entries, same exit/sizing, 20 seeds (the doc's method to split entry edge from exit edge). Pass = Sharpe ≥ SPY
 and clearly smaller DD in search and validate, beats random ≥ 95%. Holdout sealed.
+Result (search 2011–19 / validate 2020-01..2024-10, CAGR/Sharpe/DD; SPY 13.1/0.92/−19.4 · 14.7/0.69/−33.7):
+S1 7.3/0.54/−26.2 · 11.7/0.75/−18.2 (PF 1.72/1.67, 62 trades/yr, win 38%, avg +0.40R, worst −2.3R gap);
+S2 8.2/0.60/−23.5 · 6.3/0.40/−22.4; S3 10.2/0.74/−25.2 · 14.2/0.84/−18.9 (PF 1.87/1.87, avg +0.71R);
+S4 (TP at resistance) 8.7/0.67/−26.4 · 13.5/0.79/−21.0 (PF 1.51/1.66, 96 trades/yr, win 48%, avg +0.30R).
+Random entries, same exit/sizing: CAGR median 7.9 · 7.8, p95 11.5 · 10.8; PF median 1.76 ≈ the Donchian variants.
+Verdict: none pass. Search Sharpe 0.54–0.74 < SPY 0.92 and DD deeper (−23 to −26% vs −19%). Validate: S3/S4
+Sharpe > SPY with half the DD, but CAGR still below SPY. Key finding (same as the forex doc): the exit/sizing rules
+carry the edge — random entries reach PF 1.76 and 7.9%/yr; Donchian entries add little (S1 below random median
+in search). TP-at-resistance (S4) had higher win rate but lower avg R than trailing (S3), roughly equal Sharpe.
+Positive PF every period (1.5–2.5) means the rule makes money in R terms but, long-only with ≤20 × 1% risk, it stays
+under-invested versus buy-and-hold in strong up-years (2014, 2024). Holdouts stay sealed.
