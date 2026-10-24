@@ -120,3 +120,11 @@ stronger of the A/B pair). Rules EW (all sectors equal), TOP3 (score = mean of 3
 (TOP3, sector below its 200-day SMA → SHY). Rebalance every 1/3/6 months, signal at period-end close, trade next
 open, config.COSTS per side, ETFs only after they exist (XLRE 2015, XLC 2018). 27 variants. AI not backtested
 (it knows which sectors won).
+Result (search 2011–19 / validate 2020-01..2024-10, CAGR/Sharpe/DD; SPY 13.1/0.92/−19.4 · 14.7/0.69/−33.7):
+EW: A-1m 11.8/0.87/−18.5 · 12.6/0.61/−36.1; B-1m 11.1/0.81/−19.9 · 12.4/0.58/−37.4; C-6m 10.4/0.79/−19.6 · 12.6/0.60/−36.5
+TOP3: A-1m 7.9/0.57/−19.8 · 15.1/0.70/−31.9; B-3m 6.4/0.44/−22.9 · 18.2/0.80/−34.9 (best validate CAGR)
+TOP3T: A-1m 5.7/0.42/−19.8 · 11.9/0.71/−20.9; B-1m 6.3/0.45/−23.6 · 15.0/0.86/−18.5; C-1m 5.6/0.40/−23.8 · 15.5/0.90/−17.1
+3m/6m rebalancing was not better than 1m for TOP3T. Verdict: none pass — every rotation failed search (Sharpe ≤ 0.57
+vs 0.92, 2011–2016 lagged badly); TOP3T-1m looked strong 2020–24 only (2022 +6% vs SPY −18%). A vs B vs mix: no real
+difference. Holdouts stay sealed. (First run had a trailing-NaN bug that only affected the last days; fixed and rerun,
+search/validate identical.)
