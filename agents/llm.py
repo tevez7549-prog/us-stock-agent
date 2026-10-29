@@ -64,7 +64,7 @@ def _client(key):
     return anthropic.Anthropic(api_key=key)
 
 
-def run_agent(agent, system, user, tools, handlers, final="submit", max_turns=14, max_tokens=4000, max_calls=25):
+def run_agent(agent, system, user, tools, handlers, final="submit", max_turns=14, max_tokens=4000, max_calls=25, model=None):
     """Claude ทำงานแบบ agent: เรียกเครื่องมือเอง วนจนเรียก `final` (หรือครบรอบ)
     คืน (input ของ final หรือ None, เส้นทางการค้น) — ล้มเหลวทุกกรณีคืน None ให้ผู้เรียกใช้ fallback"""
     key = api_key()
@@ -75,7 +75,7 @@ def run_agent(agent, system, user, tools, handlers, final="submit", max_turns=14
     try:
         client = _client(key)
         for turn in range(max_turns):
-            msg = client.messages.create(model=config.CLAUDE_MODEL, max_tokens=max_tokens, system=system,
+            msg = client.messages.create(model=model or config.CLAUDE_MODEL, max_tokens=max_tokens, system=system,
                                          messages=msgs, tools=tools, tool_choice={"type": "auto"})
             tin, tout = tin + msg.usage.input_tokens, tout + msg.usage.output_tokens
             if msg.stop_reason == "max_tokens":
@@ -88,7 +88,7 @@ def run_agent(agent, system, user, tools, handlers, final="submit", max_turns=14
             done = next((b for b in uses if b.name == final), None)
             if done is not None:
                 trail.append({"tool": final})
-                paper.log(agent, "Claude (agent) ส่งคำตอบ", {"turns": turn + 1, "tool_calls": calls, "in": tin, "out": tout})
+                paper.log(agent, "Claude (agent) ส่งคำตอบ", {"model": model or config.CLAUDE_MODEL, "turns": turn + 1, "tool_calls": calls, "in": tin, "out": tout})
                 return done.input, trail
             if not uses:
                 msgs.append({"role": "user", "content": f"ส่งคำตอบด้วยเครื่องมือ {final} เท่านั้น"})

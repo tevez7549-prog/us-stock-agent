@@ -93,6 +93,8 @@ def rule_top3t(close, date):
 
 
 class Research(ai_pick.Research):
+    portfolio = "ai_sector"
+
     def valid(self, t):
         return t in CANDIDATES and super().valid(t)
 
@@ -140,7 +142,7 @@ class Research(ai_pick.Research):
     def check_risk(self, weights):
         from agents import risk_agent
         w, dropped = self.clean(weights)
-        fin = risk_agent.apply(w, drawdown=self.drawdown, portfolio="ai_sector")
+        fin = risk_agent.apply(w, drawdown=self.drawdown, portfolio=self.portfolio)
         return {"final_weights": fin["weights"], "risk_manager_changes": fin["log"], "dropped_not_allowed_or_no_price": dropped}
 
     def handlers(self):
@@ -161,11 +163,13 @@ def propose(close, ind, date, regime, p=None, held=(), extra=None):
         fallback["why"] = {t: "ยังไม่ได้ใส่ Anthropic API key → ถือเงินสด/พอร์ตเดิม" for t in hold_w}
         return fallback
     rs = Research(close, ind, date, held, news=extra.get("news"), drawdown=extra.get("drawdown", 0.0))
+    rs.portfolio = extra.get("agent", "ai_sector")
     user = json.dumps({"date": str(date.date()), "regime": regime.get("regime"), "exposure_hint": regime.get("exposure"),
                        "regime_reasons": regime.get("reasons"), "macro": extra.get("macro"),
                        "current_weights": {t: round(v, 3) for t, v in cur.items()} or "ยังไม่มี (เงินสดทั้งหมด)",
                        "budget_tool_calls": MAX_CALLS - 3}, ensure_ascii=False)
-    data, trail = llm.run_agent("ai_sector", SYSTEM, user, TOOLS, rs.handlers(), final="submit", max_turns=10, max_calls=MAX_CALLS)
+    data, trail = llm.run_agent(extra.get("agent", "ai_sector"), SYSTEM, user, TOOLS, rs.handlers(), final="submit", max_turns=10,
+                                max_calls=MAX_CALLS, model=extra.get("model"))
     fallback["research"] = ai_pick._compact_trail(trail)
     if not data or not isinstance(data.get("weights"), dict):
         return fallback

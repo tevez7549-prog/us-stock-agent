@@ -234,7 +234,7 @@ const fmt = (n, d=2) => n == null || isNaN(n) ? "—" : Number(n).toLocaleString
 const pct = (n, d=1) => n == null ? "—" : `${n>0?"+":""}${fmt(n*100,d)}%`;
 const cls = n => n > 0 ? "up" : n < 0 ? "down" : "";
 const KIND = {etf:"ETF",stock:"หุ้น",defensive:"ป้องกัน",cash:"เงินสด"};
-const PORTS = {momentum:["Momentum","#5b9dff"], dual_momentum:["Dual Momentum","#22c38e"], risk_parity:["Risk Parity","#f2b84b"], ai_pick:["AI Pick","#c678dd"], ai_sector:["AI หมุนกลุ่ม","#ff7a59"], breakout:["W1 เทรดรอบ","#e5e07b"], momentum_wide:["Momentum กว้าง","#7fd1e8"]};
+const PORTS = {momentum:["Momentum","#5b9dff"], dual_momentum:["Dual Momentum","#22c38e"], risk_parity:["Risk Parity","#f2b84b"], ai_pick:["AI Pick","#c678dd"], ai_sector:["AI หมุนกลุ่ม","#ff7a59"], breakout:["W1 เทรดรอบ","#e5e07b"], momentum_wide:["Momentum กว้าง","#7fd1e8"], ai_pick_opus:["AI Pick (Opus)","#e06c9f"], ai_sector_opus:["AI หมุนกลุ่ม (Opus)","#d19a66"]};
 const PORT_KEYS = Object.keys(PORTS);
 const REG = {risk_on:["ขาขึ้น","ok"],caution:["ระวัง","warn"],risk_off:["ขาลง","bad"]};
 const ST = {auto:"อนุมัติอัตโนมัติ",proposed:"รอตัดสินใจ",approved:"อนุมัติแล้ว รอเทรด",filled:"เทรดแล้ว",rejected:"ปฏิเสธ",expired:"หมดอายุ",held:"พักไว้",cancelled:"ยกเลิก",blocked:"ถูกบล็อก",
@@ -571,7 +571,7 @@ async function showPacket(id){
   const p = await api(`/api/packets/${id}`); curPkt = p; const d = p.data, a = p.audit;
   $("pktSel").value = p.id;
   $("pktStatus").innerHTML = `<span class="st ${p.status}">${ST[p.status]||p.status}</span> <span class="muted" style="font-size:12px">${d.strategy||""}</span>`;
-  $("rankTitle").textContent = p.portfolio === "risk_parity" ? "ความผันผวน (น้อย → มาก)" : p.portfolio === "dual_momentum" ? "ผลตอบแทน 12 เดือนรายกลุ่ม" : p.portfolio === "ai_sector" ? "คะแนนกลุ่ม (เฉลี่ยผลตอบแทน 3/6/12 เดือน)" : "อันดับโมเมนตัม (เอเจนต์กลยุทธ์)";
+  $("rankTitle").textContent = p.portfolio === "risk_parity" ? "ความผันผวน (น้อย → มาก)" : p.portfolio === "dual_momentum" ? "ผลตอบแทน 12 เดือนรายกลุ่ม" : p.portfolio.startsWith("ai_sector") ? "คะแนนกลุ่ม (เฉลี่ยผลตอบแทน 3/6/12 เดือน)" : "อันดับโมเมนตัม (เอเจนต์กลยุทธ์)";
   $("decAlert").hidden = a.status !== "fail"; $("decAlert").className = "alert bad";
   $("decAlert").textContent = "⛔ ผู้ตรวจสอบไม่ผ่าน: อนุมัติไม่ได้ — " + a.fails.join(" · ");
   $("report").textContent = p.report;
@@ -659,7 +659,7 @@ function renderBtHold(r){
 // ---------- Journal
 async function loadJournal(){
   const j = await api("/api/journal");
-  const A = {orchestrator:"ผู้จัดการ",execution:"ส่งออเดอร์",owner:"คุณ",data:"ข้อมูล",system:"ระบบ",backtest:"Backtest",news:"ข่าว (AI)",macro:"มหภาค (AI)",ai_pick:"AI Pick",ai_sector:"AI หมุนกลุ่ม",breakout:"W1 เทรดรอบ",momentum_wide:"Momentum กว้าง",reporter:"ผู้แปลผล (AI)"};
+  const A = {orchestrator:"ผู้จัดการ",execution:"ส่งออเดอร์",owner:"คุณ",data:"ข้อมูล",system:"ระบบ",backtest:"Backtest",news:"ข่าว (AI)",macro:"มหภาค (AI)",ai_pick:"AI Pick",ai_sector:"AI หมุนกลุ่ม",breakout:"W1 เทรดรอบ",momentum_wide:"Momentum กว้าง",ai_pick_opus:"AI Pick (Opus)",ai_sector_opus:"AI หมุนกลุ่ม (Opus)",reporter:"ผู้แปลผล (AI)"};
   $("jrTbl").innerHTML = `<tr><th class="l">เวลา</th><th class="l">พอร์ต</th><th class="l">ใคร</th><th class="l">เหตุการณ์</th><th class="l">รายละเอียด</th></tr>` + j.map(r => `<tr><td class="l mono muted">${r.time.replace("T"," ").slice(0,16)}</td><td class="l" style="color:${(PORTS[r.portfolio]||["","#8a94a3"])[1]}">${(PORTS[r.portfolio]||["ทุกพอร์ต"])[0]}</td><td class="l">${A[r.agent]||r.agent}</td><td class="l">${r.event}</td><td class="l mono muted" style="white-space:normal;font-size:12px">${(r.detail||"").replace(/</g,"&lt;")}</td></tr>`).join("");
 }
 

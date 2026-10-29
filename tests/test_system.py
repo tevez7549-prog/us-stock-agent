@@ -95,7 +95,10 @@ class FakeClient:
         self.turns, self.seen = list(turns), []
         self.messages = self
 
+    models = []
+
     def create(self, **kw):
+        FakeClient.models.append(kw.get("model"))
         if kw["messages"] and isinstance(kw["messages"][-1]["content"], list):
             self.seen.extend(r["content"] for r in kw["messages"][-1]["content"] if r.get("type") == "tool_result")
         uses = self.turns.pop(0) if self.turns else [("submit", {"weights": {}, "why": {}, "view": ""})]
@@ -207,6 +210,12 @@ def ai_test():
         assert rows["ai_pick"][1] != "fail" and all(v[0] in ("awaiting", "no_action", "decided") for v in rows.values()), rows
         assert rows["ai_pick"][0] == "decided", "AI Pick อนุมัติอัตโนมัติ (เจ้าของเลือก)"
         assert rows["momentum_wide"][0] in ("awaiting", "no_action") and rows["momentum_wide"][1] != "fail", "Momentum กว้างรอเจ้าของอนุมัติ"
+        assert rows["ai_pick_opus"][0] == "decided" and rows["ai_pick_opus"][1] != "fail", "AI Pick (Opus) อนุมัติอัตโนมัติ"
+        assert config.CLAUDE_MODEL_OPUS in FakeClient.models and config.CLAUDE_MODEL in FakeClient.models, set(FakeClient.models)
+        logged = {json.loads(r["detail"]).get("model") for r in paper.conn().execute(
+            "SELECT detail FROM journal WHERE event='Claude (agent) ส่งคำตอบ' AND portfolio IN ('ai_pick_opus','ai_sector_opus')")}
+        assert logged == {config.CLAUDE_MODEL_OPUS}, logged
+        print(f"[5] พอร์ต Opus: เรียก {config.CLAUDE_MODEL_OPUS} จริง · พอร์ตเดิมยังใช้ {config.CLAUDE_MODEL} · อนุมัติอัตโนมัติ")
         assert rows["ai_sector"][0] in ("decided", "no_action") and rows["ai_sector"][1] != "fail", rows
         from strategies import ai_sector
         rs2 = ai_sector.Research(d["close"], ind, d["close"].index[-300], ())

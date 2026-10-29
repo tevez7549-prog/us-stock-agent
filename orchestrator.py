@@ -264,7 +264,8 @@ def _weekly_one(d, ctx, as_of):
     dd = max(0.0, 1 - equity / peak)
     if meta["uses_ai"]:   # AI Pick (agent) ค้นข้อมูลเอง + เห็นประเด็นข่าวของหุ้นที่ติดตาม (รวมข่าวดี เช่น สินค้าใหม่)
         prop = meta["module"].propose(close, ind, date, reg, held=held_risky, extra={
-            "news": news_agent.for_ai(dig), "macro": macro.get("note"), "drawdown": dd,
+            "news": news_agent.for_ai(dig), "macro": macro.get("note"), "drawdown": dd, "agent": P,
+            "model": config.CLAUDE_MODEL_OPUS if meta.get("model") == "opus" else None,
             "current_weights": {t: v / equity for t, v in vals.items() if v > 0},
             "blocked": [t for t, s in ((dig or {}).get("stocks") or {}).items() if s.get("flag") == "block"]})
     else:                 # กลยุทธ์กฎ: ข่าวไม่มีผลกับการเลือก มีแค่ธง block ที่ตัดออก

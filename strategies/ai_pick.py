@@ -234,7 +234,8 @@ def propose(close, ind, date, regime, p=None, held=(), extra=None):
                        "current_weights": {t: round(v, 3) for t, v in cur.items()} or "ยังไม่มี (เงินสดทั้งหมด)",
                        "news_flags": {t: s.get("flag") for t, s in (extra.get("news") or {}).items() if s.get("flag") != "ok"},
                        "budget_tool_calls": MAX_CALLS - 5}, ensure_ascii=False)
-    data, trail = llm.run_agent("ai_pick", SYSTEM, user, TOOLS, rs.handlers(), final="submit", max_calls=MAX_CALLS)
+    data, trail = llm.run_agent(extra.get("agent", "ai_pick"), SYSTEM, user, TOOLS, rs.handlers(), final="submit", max_calls=MAX_CALLS,
+                                model=extra.get("model"))
     fallback["research"] = _compact_trail(trail)
     if not data or not isinstance(data.get("weights"), dict):
         return fallback

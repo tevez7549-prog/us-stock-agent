@@ -43,7 +43,7 @@ def template(packet, audit):
     imp = [(t, i) for t, its in (packet.get("news_items") or {}).items() for i in its if i.get("importance", 1) >= 2]
     if imp:
         lines.append("ประเด็นข่าวของหุ้นในพอร์ต: " + " · ".join(f"{t} {tone.get(i['tone'], 'ข่าว')}: {i['th'][:70]}" for t, i in imp[:6]))
-        if packet.get("portfolio") not in ("ai_pick", "ai_sector"):
+        if not str(packet.get("portfolio", "")).startswith("ai_"):
             lines.append("(ข่าวดีไม่มีผลกับกลยุทธ์นี้ — ใช้กฎตัวเลขอย่างเดียว มีแค่ข่าวร้ายแรงที่ตัดออก)")
     if packet.get("risk_log"):
         lines.append("Risk Manager ปรับ: " + " · ".join(packet["risk_log"]))

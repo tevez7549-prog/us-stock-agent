@@ -89,7 +89,7 @@ def info(t):
 set_stocks(read_sp500())
 # พอร์ตที่ไม่ต้องรอเจ้าของกดอนุมัติ (เจ้าของเลือกเอง 2026-10-22) — ยังผ่าน Risk Manager + ผู้ตรวจสอบเหมือนเดิม
 # ผู้ตรวจสอบไม่ผ่าน = ไม่อนุมัติอัตโนมัติ / Kill switch ยังหยุดได้ทุกพอร์ต
-AUTO_APPROVE = {"ai_pick", "ai_sector", "breakout"}   # ai_sector: เจ้าของเลือก 2026-10-24 · breakout (W1): 2026-10-29
+AUTO_APPROVE = {"ai_pick", "ai_sector", "breakout", "ai_pick_opus", "ai_sector_opus"}   # ai_sector: เจ้าของเลือก 2026-10-24 · breakout (W1): 2026-10-29
 # ตัวเลือกของ AI หมุนกลุ่ม (Select Sector SPDR = เฉพาะหุ้นใน S&P 500)
 SECTOR_ETFS = {"XLK": "เทคโนโลยี", "XLV": "สุขภาพ", "XLF": "การเงิน", "XLE": "พลังงาน", "XLY": "สินค้าฟุ่มเฟือย",
                "XLP": "สินค้าจำเป็น", "XLI": "อุตสาหกรรม", "XLB": "วัตถุดิบ", "XLU": "สาธารณูปโภค", "XLRE": "อสังหาฯ",
@@ -128,6 +128,7 @@ RISK = {
         "dual_momentum": {"max_etf": 1.0, "max_group": 1.0},
         "risk_parity":   {"max_etf": 0.40, "max_group": 0.40},
         "ai_sector":     {"max_etf": 0.40, "max_group": 0.40},   # ถือได้กลุ่มละไม่เกิน 40%
+        "ai_sector_opus": {"max_etf": 0.40, "max_group": 0.40},  # เหมือน ai_sector ทุกอย่าง
     },
     "min_cash": 0.05,           # เงินสด/SHY อย่างน้อย 5%
     "dd_cut_level": 0.20,       # พอร์ตลงจากจุดสูงสุด 20% → ลดความเสี่ยงครึ่งหนึ่ง (เจ้าของเปลี่ยนจาก 15% เมื่อ 2026-10-29)
@@ -149,6 +150,7 @@ MAX_PRICE_MOVE = 0.03           # ราคาขยับเกิน 3% จา
 # ---------- เอเจนต์ AI ----------
 # เปิดอัตโนมัติเมื่อมี Anthropic API key: ใส่ในหน้าตั้งค่าของเว็บ (เก็บใน D1) หรือ env ANTHROPIC_API_KEY
 CLAUDE_MODEL = "claude-sonnet-5-5"
+CLAUDE_MODEL_OPUS = "claude-opus-5-5"   # พอร์ตเทียบ AI Pick (Opus) / AI หมุนกลุ่ม (Opus) — เจ้าของสั่ง 2026-10-29
 
 DATA_START = "2010-01-01"
 DB_PATH = "data/invest.db"

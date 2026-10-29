@@ -51,4 +51,16 @@ PORTFOLIOS = {
         "desc": "กฎเดียวกับ Momentum ทุกอย่าง แต่สแกน S&P 500 + หุ้นนอกดัชนี ≥ $2,000 ล้าน (รายชื่อชุดเดียวกับ W1) ปรับรายสัปดาห์ รอเจ้าของอนุมัติ",
         "module": momentum, "cadence": "weekly", "uses_ai": False, "wide": True,
     },
+    "ai_pick_opus": {
+        "name": "AI Pick (Opus)",
+        "short": "AI Pick รุ่น Opus",
+        "desc": "เหมือน AI Pick ทุกอย่าง (เครื่องมือ กฎ Risk Manager) เปลี่ยนแค่รุ่น AI เป็น Claude Opus 5.5 เพื่อเทียบว่ารุ่นที่ฉลาดกว่าเลือกหุ้นได้ดีกว่าไหม อนุมัติอัตโนมัติ",
+        "module": ai_pick, "cadence": "weekly", "uses_ai": True, "model": "opus",
+    },
+    "ai_sector_opus": {
+        "name": "AI หมุนกลุ่ม (Opus)",
+        "short": "AI หมุนกลุ่ม รุ่น Opus",
+        "desc": "เหมือน AI หมุนกลุ่มทุกอย่าง เปลี่ยนแค่รุ่น AI เป็น Claude Opus 5.5 ปรับรายเดือน อนุมัติอัตโนมัติ",
+        "module": ai_sector, "cadence": "monthly", "uses_ai": True, "model": "opus",
+    },
 }
