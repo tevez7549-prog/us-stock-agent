@@ -15,10 +15,10 @@ import pandas as pd
 import config
 import paper
 from agents import data_agent, backtest_agent, regime_agent, risk_agent, llm
-from strategies import PORTFOLIOS
+from strategies import PORTFOLIOS, momentum
 import orchestrator
 
-CODE = {k: v for k, v in PORTFOLIOS.items() if not v["uses_ai"]}
+CODE = {k: v for k, v in PORTFOLIOS.items() if not v["uses_ai"] and not v.get("engine") and not v.get("wide")}
 
 
 def null_test():
@@ -206,6 +206,7 @@ def ai_test():
         print(f"[5] วงจรเต็มทุกพอร์ต: {rows}")
         assert rows["ai_pick"][1] != "fail" and all(v[0] in ("awaiting", "no_action", "decided") for v in rows.values()), rows
         assert rows["ai_pick"][0] == "decided", "AI Pick อนุมัติอัตโนมัติ (เจ้าของเลือก)"
+        assert rows["momentum_wide"][0] in ("awaiting", "no_action") and rows["momentum_wide"][1] != "fail", "Momentum กว้างรอเจ้าของอนุมัติ"
         assert rows["ai_sector"][0] in ("decided", "no_action") and rows["ai_sector"][1] != "fail", rows
         from strategies import ai_sector
         rs2 = ai_sector.Research(d["close"], ind, d["close"].index[-300], ())
@@ -236,6 +237,52 @@ def ai_test():
         edgar.fetch = orig_edgar
 
 
+def breakout_test(days=120):
+    """W1: เดินรายวันบนข้อมูลจำลอง — stop เลื่อนขึ้นอย่างเดียว, ไม้ละ ≤ 5%, ≤ 20 ไม้, เงินสดไม่ติดลบ, ชน stop แล้วขายจริง"""
+    from strategies import breakout
+    paper.reset()
+    d_full = data_agent.clean(data_agent.synthetic(seed=7))
+    idx = d_full["close"].index
+    prev_stops, n_buy, n_sell, max_pos = {}, 0, 0, 0
+    for i in range(len(idx) - days, len(idx)):
+        d = data_agent.truncate(d_full, idx[i])
+        breakout.run(d)
+        with paper.portfolio("breakout"):
+            stops, pos, cash = paper.get("stops") or {}, paper.positions(), paper.get("cash")
+            assert cash >= -1e-6, cash
+            assert set(stops) == set(pos), (set(stops), set(pos))
+            for t, st in stops.items():
+                if t in prev_stops:
+                    assert st["stop"] >= prev_stops[t]["stop"] - 1e-9, (t, st, prev_stops[t])
+            max_pos = max(max_pos, len(pos))
+            prev_stops = {t: dict(v) for t, v in stops.items()}
+    with paper.portfolio("breakout"):
+        rows = paper.conn().execute("SELECT side, status, usd, w_to, fill_price, ref_price, reason FROM orders WHERE portfolio='breakout'").fetchall()
+        eq = paper.conn().execute("SELECT COUNT(*) n FROM equity WHERE portfolio='breakout'").fetchone()["n"]
+    n_buy = sum(1 for r in rows if r["side"] == "BUY" and r["status"] == "filled")
+    n_sell = sum(1 for r in rows if r["side"] == "SELL")
+    assert all(r["w_to"] <= config.BREAKOUT["weight"] + 1e-9 for r in rows if r["side"] == "BUY"), "ไม้ละไม่เกิน 5%"
+    assert all(r["fill_price"] <= r["ref_price"] + 1e-6 for r in rows if r["side"] == "SELL"), "ขายที่ stop หรือต่ำกว่า (gap)"
+    assert max_pos <= config.BREAKOUT["max_positions"] and eq == days and n_buy > 0, (max_pos, eq, n_buy)
+    # Momentum กว้าง: หุ้นนอก S&P 500 เห็นเฉพาะระหว่าง with และข้อมูลถูกต่อเข้ากับข้อมูลหลัก
+    d = data_agent.clean(data_agent.synthetic(seed=7))
+    fake = d["close"][["AAPL"]].rename(columns={"AAPL": "ZZZZ"}) * 0.5
+    orig_load, orig_uni = breakout.load_bars, breakout.ensure_universe
+    breakout.load_bars = lambda t, m=None: {"close": fake, "open": fake}
+    breakout.ensure_universe = lambda force=False: {"tickers": {"ZZZZ": ["Fake Co", "tech"]}}
+    try:
+        d_w, uni = breakout.wide_data(d)
+        assert "ZZZZ" in d_w["close"].columns and "ZZZZ" not in d["close"].columns
+        with breakout.wide_universe(uni):
+            assert config.UNIVERSE["ZZZZ"]["kind"] == "stock"
+            prop = momentum.propose(d_w["close"], regime_agent.indicators(d_w["close"]), d_w["close"].index[-1],
+                                    {"exposure": 1.0}, held=())
+        assert "ZZZZ" not in config.UNIVERSE, "พอร์ตอื่นต้องไม่เห็นหุ้นนอกดัชนี"
+    finally:
+        breakout.load_bars, breakout.ensure_universe = orig_load, orig_uni
+    print(f"[8] W1: {days} วัน · ซื้อ {n_buy} ไม้ · ขายชน stop {n_sell} ไม้ · ถือพร้อมกันสูงสุด {max_pos} · stop ไม่เคยถอย · เงินสดไม่ติดลบ")
+
+
 if __name__ == "__main__":
     os.environ.pop("WORKER_URL", None)   # ทดสอบกับไฟล์ในเครื่องเสมอ ไม่แตะข้อมูลบน Cloudflare
     os.environ.pop("AGENT_TOKEN", None)
@@ -247,6 +294,7 @@ if __name__ == "__main__":
     edgar_test()
     timing_test()
     ai_test()
+    breakout_test()
     consistency_test()
     paper.reset()
     print("ผ่านทุกข้อ")

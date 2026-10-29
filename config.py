@@ -89,11 +89,14 @@ def info(t):
 set_stocks(read_sp500())
 # พอร์ตที่ไม่ต้องรอเจ้าของกดอนุมัติ (เจ้าของเลือกเอง 2026-10-22) — ยังผ่าน Risk Manager + ผู้ตรวจสอบเหมือนเดิม
 # ผู้ตรวจสอบไม่ผ่าน = ไม่อนุมัติอัตโนมัติ / Kill switch ยังหยุดได้ทุกพอร์ต
-AUTO_APPROVE = {"ai_pick", "ai_sector"}   # ai_sector: เจ้าของเลือก 2026-10-24
+AUTO_APPROVE = {"ai_pick", "ai_sector", "breakout"}   # ai_sector: เจ้าของเลือก 2026-10-24 · breakout (W1): 2026-10-29
 # ตัวเลือกของ AI หมุนกลุ่ม (Select Sector SPDR = เฉพาะหุ้นใน S&P 500)
 SECTOR_ETFS = {"XLK": "เทคโนโลยี", "XLV": "สุขภาพ", "XLF": "การเงิน", "XLE": "พลังงาน", "XLY": "สินค้าฟุ่มเฟือย",
                "XLP": "สินค้าจำเป็น", "XLI": "อุตสาหกรรม", "XLB": "วัตถุดิบ", "XLU": "สาธารณูปโภค", "XLRE": "อสังหาฯ",
                "XLC": "สื่อสาร"}
+# W1 เทรดรอบ (พอร์ต breakout, เจ้าของสั่ง 2026-10-29) = กฎ W1 จาก research/trade_stops.py ห้ามแก้ค่าโดยไม่ได้รับอนุญาต
+BREAKOUT = {"donchian": 55, "sl_atr": 3.0, "trail_atr": 6.0, "weight": 0.05, "max_positions": 20,
+            "min_mcap": 2e9, "min_dollar_volume": 10e6}
 RISKY_KINDS = ("etf", "stock", "sector")   # ของเสี่ยงที่ Risk Manager / ผู้ตรวจสอบนับ
 
 BENCHMARK = "SPY"

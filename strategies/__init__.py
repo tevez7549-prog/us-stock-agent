@@ -6,7 +6,7 @@
 
 PORTFOLIOS = ลำดับที่แสดงบนเว็บ  key = ชื่อในฐานข้อมูล (ห้ามเปลี่ยนหลังเริ่ม forward test)
 """
-from strategies import momentum, dual_momentum, risk_parity, ai_pick, ai_sector
+from strategies import momentum, dual_momentum, risk_parity, ai_pick, ai_sector, breakout
 
 PORTFOLIOS = {
     "momentum": {
@@ -38,5 +38,17 @@ PORTFOLIOS = {
         "short": "Claude เลือกกลุ่มธุรกิจ",
         "desc": "Claude เลือกสัดส่วน ETF 11 กลุ่มธุรกิจ (Select Sector SPDR) + SPY + SHY จากโมเมนตัม แนวโน้ม ข่าว และมหภาค ปรับรายเดือน อนุมัติอัตโนมัติ",
         "module": ai_sector, "cadence": "monthly", "uses_ai": True,
+    },
+    "breakout": {
+        "name": "W1 เทรดรอบ",
+        "short": "ทะลุกรอบ + stop ต่อไม้",
+        "desc": "ซื้อหุ้นที่ทะลุจุดสูงสุด 55 วัน (S&P 500 + หุ้นนอกดัชนี ≥ $2,000 ล้าน) ไม้ละ 5% ขายเมื่อชน trailing stop 6 ATR ตรวจทุกวัน อนุมัติอัตโนมัติ",
+        "module": breakout, "cadence": "daily", "uses_ai": False, "engine": "daily",
+    },
+    "momentum_wide": {
+        "name": "Momentum กว้าง",
+        "short": "โมเมนตัม 6 ตัว ตลาดกว้าง",
+        "desc": "กฎเดียวกับ Momentum ทุกอย่าง แต่สแกน S&P 500 + หุ้นนอกดัชนี ≥ $2,000 ล้าน (รายชื่อชุดเดียวกับ W1) ปรับรายสัปดาห์ รอเจ้าของอนุมัติ",
+        "module": momentum, "cadence": "weekly", "uses_ai": False, "wide": True,
     },
 }

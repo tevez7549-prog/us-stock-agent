@@ -107,12 +107,19 @@ def _daily_one(d):
 
 
 def daily(d):
-    for name in PORTFOLIOS:
+    for name, meta in PORTFOLIOS.items():
+        if meta.get("engine"):
+            continue   # พอร์ตที่มีเครื่องรายวันของตัวเอง (W1) รันด้านล่าง
         with paper.portfolio(name):
             try:
                 _daily_one(d)
             except Exception as e:
                 paper.log("orchestrator", "รอบรายวันล้มเหลว", {"error": str(e)[:300], "trace": traceback.format_exc()[-600:]})
+    try:
+        from strategies import breakout
+        breakout.run(d)
+    except Exception as e:
+        paper.log("orchestrator", "W1: รอบรายวันล้มเหลว", {"error": str(e)[:300], "trace": traceback.format_exc()[-800:]}, shared=True)
     # ค่าล่าสุดให้หน้าเว็บใช้ (เว็บไม่มี pandas คำนวณเองไม่ได้)
     close, fx = d["close"], d["fx"]
     last = close.iloc[-1]
@@ -326,9 +333,17 @@ def weekly(d, as_of=None, portfolios=None):
     ctx = _shared_context(d, date, as_of)
     out = {}
     for name in (portfolios or PORTFOLIOS):
+        if PORTFOLIOS[name].get("engine"):
+            continue
         with paper.portfolio(name):
             try:
-                out[name] = _weekly_one(d, ctx, as_of)
+                if PORTFOLIOS[name].get("wide"):   # Momentum กว้าง: ข้อมูล + รายชื่อขยาย เฉพาะระหว่างสร้างแพ็กเกจของพอร์ตนี้
+                    from strategies import breakout
+                    d_w, uni = breakout.wide_data(d)
+                    with breakout.wide_universe(uni):
+                        out[name] = _weekly_one(d_w, {**ctx, "ind": regime_agent.indicators(d_w["close"])}, as_of)
+                else:
+                    out[name] = _weekly_one(d, ctx, as_of)
             except Exception as e:
                 paper.log("orchestrator", "สร้างแพ็กเกจล้มเหลว", {"error": str(e)[:300], "trace": traceback.format_exc()[-800:]})
                 out[name] = None
@@ -386,7 +401,7 @@ def publish_backtest(d):
     wk = lambda s: [{"time": str(i.date()), "value": round(float(v), 2)} for i, v in s.resample("W-FRI").last().dropna().items()]
     out = {}
     for name, meta in PORTFOLIOS.items():
-        if meta["uses_ai"]:
+        if meta["uses_ai"] or meta.get("engine") or meta.get("wide"):
             continue
         res = backtest_agent.run(d, strategy_module=meta["module"], cadence=meta["cadence"], portfolio=name)
         o = {"stats": res["stats"], "params": res["params"], "equity": wk(res["equity"]), "bench": wk(res["bench"]),
@@ -424,7 +439,9 @@ def load_data(source="auto"):
     if paper.remote() and source in ("auto", "synthetic"):
         source = "yfinance"   # บนคลาวด์ใช้ข้อมูลจริงเท่านั้น
     refresh_universe()
-    extra = [t for t in held_everywhere() if t not in config.UNIVERSE]   # หลุดจาก S&P 500 แต่ยังถือ → ต้องมีราคาไว้ขาย
+    with paper.conn() as c:   # ตัวที่ถือ + ตัวที่อนุมัติแล้วรอเทรด แต่ไม่อยู่ใน S&P 500 (หลุดดัชนี / หุ้นนอกดัชนีของ W1, Momentum กว้าง) → ต้องมีราคาไว้เทรด
+        waiting = {r["ticker"] for r in c.execute("SELECT DISTINCT ticker FROM orders WHERE status IN ('approved','held','proposed')")}
+    extra = [t for t in sorted(set(held_everywhere()) | waiting) if t not in config.UNIVERSE]
     d, src = data_agent.load(source, allow_synthetic=not paper.remote(), extra=extra)
     d["source"] = src
     paper.log("data", f"โหลดข้อมูลจาก {src}", {"last": str(d["close"].index[-1].date()), **data_agent.DIAG}, shared=True)

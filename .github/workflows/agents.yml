@@ -20,7 +20,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       WORKER_URL: https://us-stock-agent.tevez7549.workers.dev
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
