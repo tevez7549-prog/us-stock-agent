@@ -206,6 +206,40 @@ async function packet(env, id) {
   return p;
 }
 
+// ---------- API: Agent Office (อ่านอย่างเดียว รวมทุกอย่างที่หน้าออฟฟิศใช้ในการเรียกครั้งเดียว) ----------
+async function office(env) {
+  const [state, shared, uni, equity, positions, open, lastPk, journal, intra] = await Promise.all([
+    all(env, "SELECT portfolio, key, value FROM state WHERE portfolio != '' AND key IN ('paused','stops','capital')"),
+    all(env, "SELECT key, value FROM state WHERE portfolio = '' AND key IN ('last_prices','last_data','news_digest')"),
+    first(env, "SELECT json_extract(value,'$.date') date, json_extract(value,'$.n_sp500') n_sp500, json_extract(value,'$.n_extra') n_extra FROM state WHERE portfolio='' AND key='breakout_universe'"),
+    all(env, 'SELECT portfolio, date, usd, bench_usd FROM equity ORDER BY date'),
+    all(env, 'SELECT portfolio, ticker, shares, cost_usd FROM positions WHERE shares > 1e-9'),
+    all(env, "SELECT portfolio, side, status, COUNT(*) n FROM orders WHERE status IN ('proposed','held','approved') GROUP BY portfolio, side, status"),
+    all(env, "SELECT p.portfolio, p.signal_date, p.status, (SELECT COUNT(*) FROM orders o WHERE o.packet_id = p.id AND o.side = 'BUY') buys FROM packets p WHERE p.id IN (SELECT MAX(id) FROM packets GROUP BY portfolio)"),
+    all(env, 'SELECT id, portfolio, time, agent, event, detail FROM journal ORDER BY id DESC LIMIT 120'),
+    all(env, 'SELECT portfolio, ts, usd FROM intraday WHERE ts = (SELECT MAX(ts) FROM intraday)'),
+  ]);
+  const sh = Object.fromEntries(shared.map(r => [r.key, JSON.parse(r.value)]));
+  const per = {};
+  for (const r of state) (per[r.portfolio] = per[r.portfolio] || {})[r.key] = JSON.parse(r.value);
+  const dig = sh.news_digest || {};
+  const news = { date: dig.date || null, enabled: Boolean(dig.enabled), error: dig.error || null, stocks: {} };
+  for (const [t, s] of Object.entries(dig.stocks || {}))
+    news.stocks[t] = { flag: s.flag, reason: s.reason || '', items: (s.items || []).filter(i => i.importance >= 2).slice(0, 2).map(i => ({ th: i.th, tone: i.tone, importance: i.importance })) };
+  let run = null;
+  try {
+    const token = await ghToken(env);
+    if (token && env.AGENT_REPO) {
+      const r = await gh(env, token, '/actions/workflows/agents.yml/runs?per_page=3');
+      if (r.ok) run = ((await r.json()).workflow_runs || []).map(x => ({ status: x.status, conclusion: x.conclusion, created: x.created_at, updated: x.updated_at }));
+    }
+  } catch (e) { run = null; }
+  return {
+    now: new Date(Date.now()).toISOString(), portfolios: PORTFOLIOS, per, last_prices: sh.last_prices || {}, last_data: sh.last_data || null,
+    universe: uni || null, equity, positions, open_orders: open, last_packets: lastPk, journal, intraday: intra, news, runs: run,
+  };
+}
+
 // ---------- API: ตัดสินใจ (ตรรกะเดียวกับ orchestrator.decide) ----------
 // เวลาเปิดตลาดนิวยอร์ก (ms UTC) ที่ออเดอร์ซึ่งอนุมัติ ณ เวลาไทย decidedTh จะถูกซื้อขาย
 // ตรงกับ orchestrator._fill_orders: อนุมัติก่อน 09:30 NY ของวันทำการ = เปิดวันนั้น, หลังจากนั้น = วันทำการถัดไป (ไม่รู้วันหยุดนักขัตฤกษ์)
@@ -466,6 +500,7 @@ export default {
         const m = p.match(/^\/api\/packets\/(\d+)$/);
         if (m) { const pk = await packet(env, Number(m[1])); return pk ? json(pk) : json({ error: 'ไม่พบแพ็กเกจ' }, 404); }
         if (p === '/api/run/status') return runStatus(env);
+        if (p === '/api/office') return json(await office(env));
         if (p === '/api/backtest') {
           const rows = await all(env, 'SELECT portfolio, id, created, source, data FROM backtests WHERE id IN (SELECT MAX(id) FROM backtests GROUP BY portfolio)');
           return json(Object.fromEntries(rows.map(b => [b.portfolio, { ...b, data: JSON.parse(b.data) }])));
