@@ -272,6 +272,8 @@ def run(main_d):
                 signals = []
                 if day == idx[-1] and not paper.get("paused"):
                     signals = _signals(c, day, C, A, sma, dn, uni, pos, vals, equity, cash)
+                    paper.log("scan", f"สแกน {len(uni):,} ตัว เจอสัญญาณซื้อ {len(signals)} ตัว",
+                              {"universe": len(uni), "signals": [s["ticker"] for s in signals], "date": ds}, shared=True)
                 if events or signals:
                     for oid, info in _write_packet(c, ds, events, signals, pos, vals, equity, cash, stops, uni, C, day, sma).items():
                         pend_info[str(oid)] = info

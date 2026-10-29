@@ -18,6 +18,7 @@
   nav{display:flex;gap:4px;flex-wrap:wrap}
   nav button{background:transparent;border:1px solid transparent;color:var(--mute);font-weight:500}
   nav button.on{color:var(--text);border-color:var(--line);background:var(--panel)}
+  nav .navlink{color:var(--mute);font-weight:500;text-decoration:none;padding:6px 10px;border:1px solid transparent;border-radius:6px} nav .navlink:hover{color:var(--text);border-color:var(--line)}
   nav .dot{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--warn);color:#000;font-size:11px;text-align:center}
   .badge{padding:2px 8px;border-radius:4px;font-size:12px;border:1px solid var(--line);color:var(--mute);white-space:nowrap}
   .badge.warn{border-color:var(--warn);color:var(--warn)} .badge.ok{border-color:var(--up);color:var(--up)} .badge.bad{border-color:var(--down);color:var(--down)}
@@ -79,6 +80,7 @@
     <button data-tab="dec">ตัดสินใจ<span id="pendDot" class="dot" hidden></span></button>
     <button data-tab="bt">Backtest</button>
     <button data-tab="jr">Journal</button>
+    <a class="navlink" href="/office.html">Agent Office</a>
     <button data-tab="st">ตั้งค่า</button>
   </nav>
   <span style="flex:1"></span>

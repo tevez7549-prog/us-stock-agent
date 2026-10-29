@@ -187,6 +187,18 @@ def news_today(d=None, ind=None):
         hot = [f"{t} {i['th'][:40]}" for t, s in dig["stocks"].items() for i in s["items"] if i["importance"] >= 3]
         paper.log("news", "สรุปข่าวประจำวัน", {"source": dig.get("source"), "flags": {t: s["flag"] for t, s in dig["stocks"].items() if s["flag"] != "ok"},
                                               "important": hot[:8], "error": dig.get("error")}, shared=True)
+        # หน้า Agent Office: 1 บรรทัดต่อข่าวสำคัญของหุ้นที่พอร์ตไหนถืออยู่ (ตัวอ่านข่าวเดินไปส่งพอร์ตนั้น)
+        with paper.conn() as c:
+            holders = {}
+            for r in c.execute("SELECT portfolio, ticker FROM positions WHERE shares > 1e-9"):
+                holders.setdefault(r["ticker"], []).append(r["portfolio"])
+        for t, s in dig["stocks"].items():
+            if t not in holders:
+                continue
+            top = max(s["items"], key=lambda i: i["importance"], default=None)
+            if s["flag"] != "ok" or (top and top["importance"] >= 2):
+                what = (s.get("reason") if s["flag"] != "ok" else None) or (top["th"] if top else "")
+                paper.log("news", f"ข่าว {t}: {what[:90]}", {"ticker": t, "flag": s["flag"], "held_by": sorted(holders[t])}, shared=True)
     paper.put("news_digest", dig, shared=True)
     return dig
 

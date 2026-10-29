@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Agent Office · US Stock Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&family=Pixelify+Sans:wght@500;700&display=swap">
+<style>
+/* หน้า Agent Office (อ่านอย่างเดียว) — หน้าตา/ท่าทางจาก mockup ใน Project doc claude/agent-office-mockup.html
+   ข้อมูลจริงจาก GET /api/office ทุก 60 วิตอนตลาดเปิด, 5 นาทีตอนปิด */
+:root {
+  color-scheme: dark;
+  --bg: #17131F; --bezel: #2A2236; --bezel-edge: #3B3049; --fg: #F1E9DA; --muted: #B9AEC6;
+  --parch: #F7EBD0; --parch-ink: #3A2518; --parch-muted: #7A5A40; --parch-edge: #5A3A26;
+  --teal: #2EC4B6; --hold: #3E8EF0; --sig: #14A38B; --stop: #E2A422; --err: #E5484D;
+  --up: #4ADE80; --down: #FB923C; --warn: #F59E0B; --panel: #221B2D;
+  --font-pixel: "Pixelify Sans", "Courier New", monospace;
+  --font-body: "IBM Plex Sans Thai", system-ui, sans-serif;
+}
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); background: var(--bg) }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px }
+.wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px }
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px }
+h1 { margin: 0; font-family: var(--font-pixel); font-weight: 700; font-size: clamp(28px, 5vw, 44px); letter-spacing: .02em }
+h1 span { color: var(--teal) }
+.sub { margin: 4px 0 0; color: var(--muted); font-size: 14px }
+.sub a { color: var(--teal) }
+.controls { display: flex; gap: 8px; flex-wrap: wrap }
+.btn { font-family: var(--font-pixel); font-size: 15px; color: var(--fg); background: var(--bezel); border: 2px solid var(--bezel-edge); border-radius: 4px; padding: 8px 14px; min-height: 44px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center }
+.btn[aria-pressed="true"] { background: var(--teal); color: #10231F; border-color: var(--teal) }
+.btn:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px }
+.alert { background: #3A1E24; border: 2px solid var(--err); border-radius: 6px; padding: 10px 14px; font-size: 14px }
+.alert a { color: #FFD3D6 }
+
+.screen { background: var(--bezel); border: 3px solid var(--bezel-edge); border-radius: 10px; padding: 10px; box-shadow: 0 10px 0 #0E0B14; overflow-x: auto }
+.stage { position: relative; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; border-radius: 4px; background: #0E0B14 }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges }
+.ov { position: absolute; inset: 0; pointer-events: none; --u: 3px }
+.tag { position: absolute; display: flex; align-items: center; gap: calc(var(--u) * 1); font-family: var(--font-pixel); font-size: max(7px, calc(var(--u) * 4.2)); line-height: 1; white-space: nowrap; transform: translateY(-50%) }
+.tag b { font-weight: 700; color: #fff; background: #2B2236; border: max(1px, calc(var(--u) * .6)) solid #0E0B14; padding: calc(var(--u) * .9) calc(var(--u) * 1.4); border-radius: calc(var(--u) * .8) }
+.chip { font-family: var(--font-body); font-weight: 600; font-size: max(7px, calc(var(--u) * 3.6)); color: #fff; padding: calc(var(--u) * .6) calc(var(--u) * 1.3); border-radius: calc(var(--u) * 3); border: max(1px, calc(var(--u) * .5)) solid #0E0B14 }
+.chip.hold { background: var(--hold) } .chip.sig { background: var(--sig) } .chip.wait { background: #5E5E70 } .chip.stop { background: #B07A0C } .chip.error { background: var(--err) } .chip.boss { background: #2E8A55 } .chip.warn { background: #B4650C } .chip.team { background: #6A4FB0 }
+.bubble { position: absolute; font-family: var(--font-body); font-weight: 600; font-size: max(8px, calc(var(--u) * 4)); line-height: 1.25; color: var(--parch-ink); background: #FFFDF6; border: max(1px, calc(var(--u) * .7)) solid #2A1A1A; border-radius: calc(var(--u) * 1.5); padding: calc(var(--u) * 1) calc(var(--u) * 2); white-space: nowrap; transform: translate(-10%, -100%); max-width: 60vw; overflow: hidden; text-overflow: ellipsis }
+.bubble.q { font-family: var(--font-pixel); font-weight: 700; padding: calc(var(--u) * .6) calc(var(--u) * 1.6); color: #2B6CD9 }
+.bubble.bang { font-family: var(--font-pixel); font-weight: 700; padding: calc(var(--u) * .6) calc(var(--u) * 1.8); color: #fff; background: var(--err) }
+.room { position: absolute; font-family: var(--font-pixel); font-weight: 700; font-size: max(7px, calc(var(--u) * 4)); color: #F7EBD0; text-shadow: 0 2px 0 #2A1A1A; letter-spacing: .06em; white-space: nowrap }
+.board { position: absolute; font-family: var(--font-pixel); font-weight: 700; color: #1C2A1E; font-size: max(7px, calc(var(--u) * 4.4)); line-height: 1.15; text-align: center; transform: translate(-50%, 0); white-space: nowrap }
+.board small { display: block; font-size: max(6px, calc(var(--u) * 3.2)); color: #3A5A3E }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px }
+.kpi { background: var(--panel); border: 2px solid var(--bezel-edge); border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0 }
+.kpi.warnbox { border-color: var(--warn) }
+.kpi .lbl { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px }
+.kpi .num { font-family: var(--font-pixel); font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1 }
+.kpi .sm { font-size: 13px; color: var(--muted) }
+.up { color: var(--up) } .down { color: var(--down) } .warnc { color: var(--warn) }
+.bar { height: 10px; background: #120E19; border: 2px solid var(--bezel-edge); border-radius: 2px; overflow: hidden }
+.bar i { display: block; height: 100%; background: var(--up) }
+.bar i.hot { background: var(--warn) }
+.conn { display: flex; align-items: center; gap: 8px; font-size: 13px }
+.conn .dot { width: 10px; height: 10px; background: var(--up); flex: none }
+.conn .dot.off { background: var(--err) } .conn .dot.night { background: #5E5E70 } .conn .dot.busy { background: var(--warn) }
+.conn time { margin-left: auto; font-family: var(--font-pixel); font-size: 13px; color: var(--muted); white-space: nowrap }
+
+.sec-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 8px }
+.sec-h h2 { margin: 0; font-family: var(--font-pixel); font-size: 24px }
+.sec-h p { margin: 0; font-size: 13px; color: var(--muted) }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px }
+.card { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 10px; min-width: 0; background: var(--panel); color: var(--fg); font-family: var(--font-body); border: 2px solid var(--bezel-edge); border-radius: 6px; padding: 14px; transition: border-color .15s, transform .15s }
+.card.team { border-style: dashed }
+.card.error { border-color: #8A2E33 }
+.card:hover, .card[aria-pressed="true"] { border-color: var(--teal); transform: translateY(-2px) }
+.card:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px }
+.card .top { display: flex; align-items: center; gap: 10px }
+.card canvas { position: static; width: 36px; height: 60px; flex: none; image-rendering: pixelated; background: #2E2540; border-radius: 4px }
+.card .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 }
+.card .nm { font-family: var(--font-pixel); font-size: 18px; font-weight: 700 }
+.card .mk { font-size: 12px; color: var(--muted) }
+.card .grp { font-family: var(--font-pixel); font-size: 11px; letter-spacing: .08em; padding: 3px 8px; border: 2px solid var(--bezel-edge); border-radius: 4px; color: var(--muted); align-self: flex-start; white-space: nowrap }
+.card.team .grp { border-style: dashed }
+.card .chip { font-size: 13px; padding: 3px 10px; border-radius: 12px; align-self: flex-start; border-width: 2px }
+.pos { background: #120E19; border: 2px solid var(--bezel-edge); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-family: var(--font-pixel); font-size: 15px; font-variant-numeric: tabular-nums }
+.pos .ln { display: flex; justify-content: space-between; gap: 8px }
+.pos .lv { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted) }
+.idle { border: 2px dashed var(--bezel-edge); border-radius: 4px; padding: 8px 10px; font-size: 13px; color: var(--muted) }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; border-top: 2px solid var(--bezel-edge); padding-top: 8px }
+.stats span { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); min-width: 0 }
+.stats b { font-family: var(--font-pixel); font-size: 15px; font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.stats b.up { color: var(--up) } .stats b.down { color: var(--down) }
+.foot { font-size: 12px; color: var(--muted) }
+
+.dialog { background: var(--parch); color: var(--parch-ink); border: 4px solid var(--parch-edge); border-radius: 6px; box-shadow: inset 0 0 0 3px #EAD6AE, 0 6px 0 #0E0B14; padding: 16px 18px; min-width: 0 }
+.dialog h2 { margin: 0 0 10px; font-family: var(--font-pixel); font-size: 22px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap }
+.dialog h2 small { font-family: var(--font-body); font-size: 13px; font-weight: 600; color: var(--parch-muted) }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; font-size: 13px; font-weight: 700 }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 5px; background: currentColor; vertical-align: 1px }
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px }
+.log li { display: grid; grid-template-columns: 82px 132px 104px minmax(0, 1fr); gap: 10px; font-size: 14px; align-items: baseline; border-top: 2px dashed #E2CDA2; padding-top: 6px }
+.log li:first-child { border-top: 0; padding-top: 0 }
+.log li.fresh { animation: pop .8s ease-out }
+@keyframes pop { from { background: #FFE9A8 } to { background: transparent } }
+.log time, .log .who { font-family: var(--font-pixel); font-variant-numeric: tabular-nums }
+.log time { color: var(--parch-muted) }
+.log .kind { font-weight: 700; font-size: 13px }
+.log .what { overflow-wrap: anywhere }
+.k-buy { color: #1F5FAF } .k-tp { color: #1D7A3E } .k-cut { color: #B5481E } .k-reb { color: #6A5A48 } .k-news { color: #7A3FA8 } .k-scan { color: #0E7C72 } .k-err { color: #B3261E }
+.note { font-size: 12px; color: var(--parch-muted); margin: 12px 0 0 }
+@media (max-width: 600px) { .log li { grid-template-columns: 70px minmax(0, 1fr) } .log .kind { grid-column: 2 } .log .what { grid-column: 1 / -1 } .stats { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+@media (prefers-reduced-motion: reduce) { .card, .log li.fresh { transition: none; animation: none } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Agent <span>Office</span></h1>
+      <p class="sub">ทีม agent ของ us-stock-agent · <span id="asof">กำลังโหลด…</span> · <a href="/">กลับหน้าหลัก</a></p>
+    </div>
+    <div class="controls" role="group" aria-label="ควบคุมการเล่น">
+      <button class="btn" id="btn-play" type="button" aria-pressed="false">หยุดชั่วคราว</button>
+      <button class="btn" id="btn-s1" type="button" aria-pressed="true">1x</button>
+      <button class="btn" id="btn-s2" type="button" aria-pressed="false">2x</button>
+      <button class="btn" id="btn-s3" type="button" aria-pressed="false">3x</button>
+    </div>
+  </header>
+
+  <div class="alert" id="alert" hidden></div>
+
+  <section class="kpis" aria-label="ภาพรวม">
+    <div class="kpi"><span class="lbl" id="k-val-l">มูลค่าพอร์ตรวม (paper)</span><span class="num" id="k-val">—</span><span class="sm" id="k-val-s"></span></div>
+    <div class="kpi"><span class="lbl">ผลตอบแทนรวม เทียบ SPY ช่วงเดียวกัน</span><span class="num" id="k-ret">—</span><span class="sm" id="k-ret-s"></span></div>
+    <div class="kpi" id="k-dd-box"><span class="lbl"><span>Drawdown พอร์ตที่ลึกสุด</span><span>เกณฑ์ลดไม้ 20%</span></span><span class="num" id="k-dd">—</span>
+      <span class="bar" id="k-dd-bar" role="img" aria-label="drawdown"><i style="width:0"></i></span><span class="sm" id="k-dd-s"></span></div>
+    <div class="kpi"><span class="lbl">หุ้น/ETF ที่ถืออยู่</span><span class="num" id="k-hold">—</span><span class="sm" id="k-hold-s"></span></div>
+    <div class="kpi"><span class="lbl">ตลาดสหรัฐ · การรันระบบ</span>
+      <span class="conn"><span class="dot night" id="mk-dot" aria-hidden="true"></span><span id="mk-txt">—</span></span>
+      <span class="sm" id="mk-next"></span>
+      <span class="conn"><span class="dot" id="run-dot" aria-hidden="true"></span><span id="run-txt">GitHub Actions</span><time id="run-time">—</time></span>
+      <span class="conn"><span class="dot" id="wd-dot" aria-hidden="true"></span><span>Worker watchdog</span><time id="wd-time">—</time></span>
+    </div>
+  </section>
+
+  <div class="screen">
+    <div class="stage" id="stage">
+      <canvas id="cv" role="img" aria-label="ออฟฟิศพิกเซล พอร์ตทุกพอร์ตนั่งประจำโต๊ะ ทีมสแกนและอ่านข่าว และหัวหน้าฝ่ายความเสี่ยง"></canvas>
+      <div class="ov" id="ov" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div class="sec-h"><h2>ทีม Agent</h2><p>ชี้หรือกดการ์ดเพื่อดูว่านั่งตรงไหนในออฟฟิศ</p></div>
+  <section class="cards" id="cards" aria-label="สถานะแต่ละพอร์ตและทีมสนับสนุน"></section>
+
+  <section class="dialog" aria-label="สมุดรายงาน">
+    <h2>สมุดรายงาน · เหตุการณ์ล่าสุด <small id="count">ส่งเอกสารแล้ว 0 ฉบับ</small></h2>
+    <div class="legend"><span class="k-buy">สัญญาณซื้อ</span><span class="k-tp">ขายที่ TP</span><span class="k-cut">ขายที่ cutloss</span><span class="k-reb">ขายปรับพอร์ต</span><span class="k-news">ข่าวสำคัญ</span><span class="k-scan">สแกนเสร็จ</span><span class="k-err">error</span></div>
+    <ul class="log" id="log"><li><span></span><span></span><span></span><span class="what">กำลังโหลด…</span></li></ul>
+    <p class="note">หน้านี้อ่านอย่างเดียว ไม่มีปุ่มซื้อขายหรือแก้ค่า ดึงข้อมูลใหม่ทุก 60 วินาทีตอนตลาดเปิด และทุก 5 นาทีตอนปิด ตัวละครลุกเดินเฉพาะเมื่อมีเหตุการณ์ใหม่หลังเปิดหน้านี้ ยังไม่มีพอร์ตไหนใช้ TP</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  // ---------- ตัวละคร (รายชื่อพอร์ตจริงมาจาก /api/office; ตารางนี้กำหนดแค่หน้าตา) ----------
+  const LOOK = {
+    momentum:       { name: 'Momentum',          mk: 'โมเมนตัม 6 ตัว · รายสัปดาห์', hair: '#3B2416', hi: '#5E3B24', skin: '#F6CFA4', shirt: '#5B9DFF', shade: '#3A78D6', mug: '#E5484D' },
+    dual_momentum:  { name: 'Dual Mom',          mk: 'สลับกลุ่มสินทรัพย์ · รายเดือน', hair: '#1F1F2A', hi: '#3C3C52', skin: '#E3AE86', shirt: '#22C38E', shade: '#169A6F', mug: '#3E8EF0' },
+    risk_parity:    { name: 'Risk Parity',       mk: 'หุ้น/พันธบัตร/ทอง · รายเดือน', hair: '#8A4E2A', hi: '#B26C40', skin: '#F6CFA4', shirt: '#F2B84B', shade: '#C89128', mug: '#2EC4B6' },
+    momentum_wide:  { name: 'Mom กว้าง',         mk: 'โมเมนตัม 6 ตัว · ตลาดกว้าง', hair: '#E2C27A', hi: '#F6DEA6', skin: '#F2C29A', shirt: '#7FD1E8', shade: '#55A9C2', mug: '#F2C230' },
+    ai_pick:        { name: 'AI Pick',           mk: 'Sonnet เลือกหุ้น · รายสัปดาห์', hair: '#5A3A22', hi: '#7C5438', skin: '#D49C74', shirt: '#C678DD', shade: '#9C52B4', mug: '#E5484D' },
+    ai_pick_opus:   { name: 'AI Pick Opus',      mk: 'Opus เลือกหุ้น · รายสัปดาห์', hair: '#C0C0C8', hi: '#E8E8EE', skin: '#E3AE86', shirt: '#E06C9F', shade: '#B44A7B', mug: '#7C6CE0' },
+    ai_sector:      { name: 'AI หมุนกลุ่ม',      mk: 'Sonnet เลือก ETF · รายเดือน', hair: '#2A2A2A', hi: '#4A4A4A', skin: '#F6CFA4', shirt: '#FF7A59', shade: '#D2573A', mug: '#7C6CE0' },
+    ai_sector_opus: { name: 'หมุนกลุ่ม Opus',    mk: 'Opus เลือก ETF · รายเดือน', hair: '#6A3A1A', hi: '#8E5630', skin: '#D49C74', shirt: '#D19A66', shade: '#A87444', mug: '#2EC4B6' },
+    breakout:       { name: 'W1 เทรดรอบ',        mk: 'ทะลุ 55 วัน + trailing stop · รายวัน', hair: '#9A5B3A', hi: '#BE7B55', skin: '#E3AE86', shirt: '#E5E07B', shade: '#BDB753', mug: '#F2C230' },
+    scan:           { name: 'ตัวสแกน',           mk: 'รายชื่อหุ้น + หาสัญญาณ W1', hair: '#E8E2D6', hi: '#FFFFFF', skin: '#F2C29A', shirt: '#2FA88E', shade: '#1E816D', mug: '#2EC4B6', team: true },
+    news:           { name: 'ตัวอ่านข่าว',        mk: 'SEC 8-K + Finnhub · วันละครั้ง', hair: '#3A2A50', hi: '#5A4878', skin: '#EDBB90', shirt: '#9A6AAE', shade: '#764C8A', mug: '#E5484D', team: true }
+  };
+  const FALLBACK_SHIRTS = ['#8EC07C', '#F07B2C', '#7C6CE0', '#2EC4B6', '#E5484D'];
+  const AUTO = new Set(['ai_pick', 'ai_sector', 'breakout', 'ai_pick_opus', 'ai_sector_opus']);   // ตรงกับ config.AUTO_APPROVE
+  const DD_CUT = 0.20;   // ตรงกับ config.RISK dd_cut_level
+  const STATUS_TH = { hold: 'ถือหุ้น', sig: 'มีสัญญาณ', wait: 'รอสัญญาณ', stop: 'หยุด', error: 'error', team: 'ทำงานปกติ' };
+
+  // ---------- เวลาตลาดนิวยอร์ก (daylight saving อัตโนมัติจาก time zone + วันหยุด NYSE) ----------
+  const HOLIDAYS = new Set(['2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25', '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25',
+    '2027-01-01', '2027-01-18', '2027-02-15', '2027-03-26', '2027-05-31', '2027-06-18', '2027-07-05', '2027-09-06', '2027-11-25', '2027-12-24']);
+  const EARLY = new Set(['2026-11-27', '2026-12-24', '2027-11-26']);
+  const nyFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short' });
+  function ny(ms) { const p = Object.fromEntries(nyFmt.formatToParts(new Date(ms)).map(x => [x.type, x.value])); return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour % 24, mi: +p.minute, wd: p.weekday, date: p.year + '-' + p.month + '-' + p.day } }
+  function nyToUtc(y, m, d, h, mi) { let g = Date.UTC(y, m - 1, d, h, mi); for (let k = 0; k < 2; k++) { const p = ny(g); g -= Date.UTC(p.y, p.m - 1, p.d, p.h, p.mi) - Date.UTC(y, m - 1, d, h, mi) } return g }
+  const tradingDay = p => !['Sat', 'Sun'].includes(p.wd) && !HOLIDAYS.has(p.date);
+  function market(now) {
+    const p = ny(now), sess = q => ({ open: nyToUtc(q.y, q.m, q.d, 9, 30), close: nyToUtc(q.y, q.m, q.d, EARLY.has(q.date) ? 13 : 16, 0) });
+    if (tradingDay(p)) { const s = sess(p); if (now >= s.open && now < s.close) return { open: true, next: s.close, early: EARLY.has(p.date) } }
+    for (let k = 0; k < 10; k++) { const q = ny(nyToUtc(p.y, p.m, p.d, 12, 0) + k * 86400000); if (!tradingDay(q)) continue; const s = sess(q); if (s.open > now) return { open: false, next: s.open, holiday: HOLIDAYS.has(p.date) && !['Sat', 'Sun'].includes(p.wd) } }
+    return { open: false, next: null };
+  }
+  // วันทำการล่าสุดที่ตลาดปิดแล้ว (ใช้เช็คว่าข้อมูลปิดตลาดอัปเดตตามที่ควรไหม)
+  function lastClosedSession(now) {
+    for (let k = 0; k < 10; k++) { const q = ny(now - k * 86400000); if (!tradingDay(q)) continue; if (now >= nyToUtc(q.y, q.m, q.d, EARLY.has(q.date) ? 13 : 16, 0)) return q.date } return null;
+  }
+  const thFmt = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  const thTime = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+  const thDay = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' });
+  const todayTh = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
+  const fmtUsd = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtPct = (v, d = 2) => (v >= 0 ? '+' : '−') + Math.abs(v * 100).toFixed(d) + '%';
+  function whenTh(s) {   // journal time = เวลาไทย "YYYY-MM-DDTHH:MM:SS" หรือ "YYYY-MM-DD" (วันซื้อขาย)
+    if (!s) return '—';
+    if (s.length <= 10) return thDay.format(new Date(s + 'T12:00:00+07:00'));
+    const d = s.slice(0, 10) === todayTh() ? '' : thDay.format(new Date(s.slice(0, 10) + 'T12:00:00+07:00')) + ' ';
+    return d + s.slice(11, 16);
+  }
+
+  // ---------- sprites (จาก mockup) ----------
+  const HEAD = ['...oooooo...', '..ohhhhhho..', '.ohhHHhhhho.', 'ohhhhhhhhhho', 'ohssssssssho', 'ossessssesso', 'ossessssesso', 'osrssssssrso', '.osssmmssso.', '..oossssoo..'];
+  const HEAD_SLEEP = HEAD.slice(0, 5).concat(['osssssssssso', 'osddssssddso', 'osrssssssrso', '.ossssssssso', '..oossssoo..']);
+  const HEAD_BACK = HEAD.slice(0, 4).concat(['ohhhhhhhhhho', 'ohhhHhhhhhho', 'ohhhhhhhhhho', 'ohhhhhhhhhho', '.ohhhhhhhho.', '..oossssoo..']);
+  const BODY = ['..occcccco..', '.occcccccco.', 'oscccccccCso', 'oscccccccCso', '.ooccccccoo.', '..opppppPo..'];
+  const BODY_TIE = ['..occttcco..', '.occcttcccco', 'osccctcccCso', 'osccctcccCso', '.ooccccccoo.', '..opppppPo..'];
+  const LEGS = [['..oppooPPo..', '..oppooPPo..', '..obbo.obbo.', '..oooo.oooo.'], ['..oppo.oPPo.', '..oppo.oPo..', '..obbo.obo..', '..oooo.ooo..'], ['..oPPo.oppo.', '..oPo..oppo.', '..obo..obbo.', '..ooo..oooo.']];
+  const BASE = { o: '#2A1A1A', e: '#2A1A1A', m: '#B85A4A', r: '#F29A9C', p: '#3A4766', P: '#2A3450', b: '#3A2A20', d: '#8A5A40', t: '#C93A3A' };
+  const pal = a => Object.assign({}, BASE, { h: a.hair, H: a.hi, s: a.skin, c: a.shirt, C: a.shade });
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const ov = document.getElementById('ov'), stage = document.getElementById('stage');
+  let cur = ctx;
+  function drawRows(rows, x, y, p) { for (let r = 0; r < rows.length; r++) { const row = rows[r]; for (let c = 0; c < row.length; c++) { const col = p[row[c]]; if (col) { cur.fillStyle = col; cur.fillRect(x + c, y + r, 1, 1) } } } }
+  function drawChar(a, x, y, o) {
+    const p = pal(a);
+    if (o.shadow) { cur.fillStyle = 'rgba(30,15,10,0.28)'; cur.fillRect(x + 1, y + 19, 10, 2); cur.fillRect(x + 2, y + 21, 8, 1) }
+    drawRows(o.back ? HEAD_BACK : o.sleep ? HEAD_SLEEP : HEAD, x, y, p); drawRows(o.tie ? BODY_TIE : BODY, x, y + 10, p); drawRows(LEGS[o.frame || 0], x, y + 16, p);
+  }
+
+  // ---------- ผังออฟฟิศ: ห้องรอคุณอนุมัติ | หัวหน้า | ห้องอนุมัติอัตโนมัติ (+ กระดาน SPY) | ทีมช่วย — โต๊ะเพิ่มได้เอง ----------
+  const H = 216, DESK_W = 46, COL = 60, ROWS = [62, 128], AISLE_Y = 172;
+  let W = 448, AGENTS = [], BOSS = null, BOSS_FRONT = null, SPYB = null, ROOMS = [], WINDOWS = [], GLASS = [];
+  function layout(ids) {
+    const manual = ids.filter(id => !AUTO.has(id)), auto = ids.filter(id => AUTO.has(id));
+    const mCols = Math.max(2, Math.ceil(manual.length / 2)), aCols = Math.max(2, Math.ceil((auto.length + 1) / 2));
+    const bossX = 14 + mCols * COL + 10, autoX = bossX + 100, teamX = autoX + aCols * COL + 12;
+    W = teamX + COL + 10;
+    const place = (list, x0, cols) => list.map((id, i) => ({ id, x: x0 + Math.floor(i / 2) * COL, y: ROWS[i % 2] }));
+    const spots = place(manual, 14, mCols).concat(place(auto, autoX, aCols)).concat(place(['scan', 'news'], teamX, 1));
+    const spySlot = auto.length; SPYB = { x: autoX + Math.floor(spySlot / 2) * COL + 4, y: ROWS[spySlot % 2] - 36 };
+    BOSS = { x: bossX + 4, y: 96, w: 64, hair: '#4A3A30', hi: '#6C5646', skin: '#EDBB90', shirt: '#2E3F6E', shade: '#22305A' };
+    BOSS_FRONT = { x: BOSS.x + 26, y: 118 };
+    ROOMS = [{ label: 'รอคุณอนุมัติ', x: 4 }, { label: 'อนุมัติอัตโนมัติ', x: autoX - 6 }, { label: 'ทีมช่วย', x: teamX - 6 }];
+    GLASS = [autoX - 14, teamX - 11];
+    WINDOWS = [18, 72].concat([autoX + 30, teamX + 4]).filter(x => x + 42 < W);
+    AGENTS = spots.map((s, i) => {
+      const L = LOOK[s.id] || { name: s.id, mk: '', hair: '#3B2416', hi: '#5E3B24', skin: '#F6CFA4', shirt: FALLBACK_SHIRTS[i % 5], shade: '#555', mug: '#E5484D' };
+      return Object.assign({}, L, s, { st: L.team ? 'team' : 'wait', n: 0 });
+    });
+    cv.width = W; cv.height = H; ctx.imageSmoothingEnabled = false;
+    stage.style.aspectRatio = W + ' / ' + H;
+    stage.style.minWidth = Math.min(W * 1.4, 620) + 'px';
+    paintBg();
+  }
+
+  const bg = document.createElement('canvas'); const b = bg.getContext('2d');
+  const rect = (g, x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h) };
+  function paintBg() {
+    bg.width = W; bg.height = H;
+    let seed = 7; const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 };
+    for (let y = 34, row = 0; y < H; y += 8, row++) {
+      rect(b, 0, y, W, 8, row % 2 ? '#C28B57' : '#B9824F'); rect(b, 0, y, W, 1, '#8F5E35'); rect(b, 0, y + 1, W, 1, row % 2 ? '#CF9A64' : '#C58E59');
+      for (let x = (row * 19) % 48; x < W; x += 48) rect(b, x, y, 1, 8, '#8F5E35');
+      for (let k = 0; k < 4; k++) rect(b, Math.floor(rnd() * W), y + 4, 2, 1, '#9C673C');
+    }
+    rect(b, GLASS[0] + 3, 34, GLASS[1] - GLASS[0], H - 34, 'rgba(90,140,200,0.07)'); rect(b, GLASS[1] + 3, 34, W - GLASS[1], H - 34, 'rgba(120,200,140,0.08)');
+    const rx = BOSS.x - 12;
+    rect(b, rx, 82, 88, 66, '#4A2C58'); rect(b, rx + 2, 84, 84, 62, '#7C4E8E'); rect(b, rx + 6, 88, 76, 54, '#6A3E7C');
+    for (let y = 92; y < 140; y += 6) for (let x = rx + 10 + ((y / 6) % 2) * 3; x < rx + 80; x += 6) rect(b, x, y, 2, 2, '#9A6AAE');
+    rect(b, 0, 0, W, 34, '#6F84A6'); for (let x = 0; x < W; x += 8) rect(b, x, 4, 1, 18, '#7A8FB0');
+    rect(b, 0, 0, W, 4, '#55688A'); rect(b, 0, 22, W, 10, '#4E6080'); rect(b, 0, 22, W, 1, '#8CA0C0'); rect(b, 0, 32, W, 2, '#33405A');
+    GLASS.forEach(gx => { rect(b, gx, 40, 3, 128, 'rgba(180,225,245,0.45)'); rect(b, gx + 3, 40, 1, 128, 'rgba(255,255,255,0.35)'); for (let y = 40; y <= 168; y += 32) rect(b, gx - 1, y, 5, 3, '#DDE6F0'); rect(b, gx - 1, 166, 5, 3, '#DDE6F0') });
+    const shx = BOSS.x + 6;
+    rect(b, shx, 4, 52, 34, '#3A2414'); rect(b, shx + 2, 6, 48, 30, '#7A4A26');
+    const books = ['#E5484D', '#3E8EF0', '#F2C230', '#2EC4B6', '#7C6CE0', '#F07B2C', '#E8E2D6'];
+    [6, 16, 26].forEach(sy => { rect(b, shx + 2, sy + 9, 48, 1, '#3A2414'); for (let x = shx + 4; x < shx + 48;) { const w = 2 + Math.floor(rnd() * 3), h = 6 + Math.floor(rnd() * 3); rect(b, x, sy + 9 - h, w, h, books[Math.floor(rnd() * books.length)]); x += w + (rnd() < .2 ? 3 : 0) } });
+    rect(b, BOSS.x - 32, 6, 28, 18, '#2A1A1A'); rect(b, BOSS.x - 31, 7, 26, 16, '#FFFDF6');
+    [19, 17, 18, 14, 15, 11, 12, 9].forEach((v, i, a) => { if (i < a.length - 1) rect(b, BOSS.x - 29 + i * 3, v, 3, 1, '#2E9E5B') });
+    const wx = BOSS.x + 66; rect(b, wx, 30, 10, 18, '#2A1A1A'); rect(b, wx + 1, 31, 8, 16, '#DCE3EA'); rect(b, wx + 2, 22, 6, 9, '#8FD0F0'); rect(b, wx + 3, 23, 2, 6, '#C7EBFA'); rect(b, wx + 3, 38, 4, 2, '#3E8EF0');
+    const px = BOSS.x - 26; rect(b, px, 36, 18, 12, '#2A1A1A'); rect(b, px + 1, 37, 16, 10, '#C9CDD6'); rect(b, px + 3, 39, 12, 2, '#4A5060'); rect(b, px + 4, 33, 10, 4, '#FFFDF6');
+    function plant(x, y) { rect(b, x + 1, y + 10, 10, 8, '#2A1A1A'); rect(b, x + 2, y + 11, 8, 6, '#C0643A'); rect(b, x + 2, y + 11, 8, 1, '#D9824F'); const g = ['#3A7A30', '#4C9A3E', '#6BB85A']; for (let i = 0; i < 40; i++) rect(b, x + Math.floor(rnd() * 12), y + Math.floor(rnd() * 11), 1, 1, g[Math.floor(rnd() * 3)]) }
+    plant(BOSS.x - 36, 150); plant(BOSS.x + 72, 150); plant(W - 14, 34);
+    const s = SPYB; rect(b, s.x + 6, s.y + 6, 2, 40, '#3A2414'); rect(b, s.x + 42, s.y + 6, 2, 40, '#3A2414');
+    rect(b, s.x, s.y, 50, 32, '#2A1A1A'); rect(b, s.x + 1, s.y + 1, 48, 30, '#EAF3E2'); rect(b, s.x + 1, s.y + 1, 48, 2, '#FFFFFF');
+  }
+
+  // ---------- ชิ้นที่ขยับ ----------
+  let isNight = true;
+  function windowAt(x, t) {
+    rect(ctx, x, 5, 42, 20, '#F1EAD8');
+    if (isNight) {
+      for (let r = 0; r < 16; r++) rect(ctx, x + 2, 7 + r, 38, 1, r < 8 ? '#141C3A' : '#1E2A4E');
+      [[6, 3], [15, 9], [27, 4], [33, 11], [10, 13], [22, 7]].forEach(([sx, sy], i) => { if ((t + i * 13) % 90 > 12) rect(ctx, x + 2 + sx, 7 + sy, 1, 1, '#FFF6C8') });
+      if (x === 72) { rect(ctx, x + 30, 9, 5, 5, '#FFF2B0'); rect(ctx, x + 32, 9, 3, 3, '#141C3A') }
+    } else {
+      for (let r = 0; r < 16; r++) rect(ctx, x + 2, 7 + r, 38, 1, r < 8 ? '#7EC8F0' : '#A9DDF7');
+      const cx = x + 2 + ((t / 30 + x) % 50) - 10;
+      for (const [dx, dy, w] of [[0, 4, 8], [2, 3, 4], [-2, 5, 12]]) { const sx = Math.max(x + 2, cx + dx), ex = Math.min(x + 40, cx + dx + w); if (ex > sx) rect(ctx, sx, 7 + dy, ex - sx, 1, '#FFFFFF') }
+    }
+    rect(ctx, x + 20, 7, 2, 16, '#F1EAD8'); rect(ctx, x + 2, 14, 38, 1, '#F1EAD8'); rect(ctx, x, 25, 42, 2, '#D8CDB4');
+    if (!isNight) { ctx.fillStyle = 'rgba(255,236,170,0.10)'; ctx.beginPath(); ctx.moveTo(x + 2, 34); ctx.lineTo(x + 40, 34); ctx.lineTo(x + 54, 70); ctx.lineTo(x + 16, 70); ctx.closePath(); ctx.fill() }
+  }
+  function clock(x, y) {
+    rect(ctx, x + 1, y, 12, 14, '#2A1A1A'); rect(ctx, x, y + 1, 14, 12, '#2A1A1A'); rect(ctx, x + 2, y + 1, 10, 12, '#FFFDF6'); rect(ctx, x + 1, y + 2, 12, 10, '#FFFDF6');
+    const p = ny(Date.now()), cx = x + 7, cy = y + 7;
+    const hand = (ang, len, col) => { for (let i = 0; i <= len; i++) rect(ctx, Math.round(cx + Math.sin(ang) * i), Math.round(cy - Math.cos(ang) * i), 1, 1, col) };
+    hand((p.h % 12 + p.mi / 60) / 12 * Math.PI * 2, 3, '#2A1A1A'); hand(p.mi / 60 * Math.PI * 2, 5, '#C93A3A');
+  }
+  function partition(x, y) { const px = x - 2, py = y - 24, w = DESK_W + 4; rect(ctx, px, py, w, 18, '#3B4862'); rect(ctx, px + 1, py + 1, w - 2, 16, '#8EA0BE'); rect(ctx, px + 1, py + 1, w - 2, 2, '#B5C3DA'); for (let yy = py + 5; yy < py + 16; yy += 3) for (let xx = px + 3 + (yy % 2); xx < px + w - 2; xx += 4) rect(ctx, xx, yy, 1, 1, '#7F92B2'); rect(ctx, px + w - 10, py + 5, 4, 4, '#F2D65A'); rect(ctx, px + w - 10, py + 5, 4, 1, '#E0C040') }
+  function chair(x, y, col) { rect(ctx, x + 15, y - 14, 16, 13, '#22222E'); rect(ctx, x + 16, y - 13, 14, 11, col); rect(ctx, x + 16, y - 13, 14, 2, 'rgba(255,255,255,0.18)') }
+  function screen(x, y, st, t, s) {
+    rect(ctx, x, y, 14, 11, '#1B1E25'); const sx = x + 1, sy = y + 1;
+    if (st === 'error') { rect(ctx, sx, sy, 12, 8, t % 12 < 6 ? '#C83A3A' : '#7A1C1C'); rect(ctx, sx + 5, sy + 1, 2, 4, '#FFFFFF'); rect(ctx, sx + 5, sy + 6, 2, 1, '#FFFFFF') }
+    else if (isNight && st !== 'boss') { rect(ctx, sx, sy, 12, 8, '#0B0D12'); if ((t >> 4) % 6 === 0) rect(ctx, sx + 10, sy + 6, 1, 1, '#2EC4B6') }
+    else if (st === 'hold' || st === 'boss' || st === 'sig') {
+      rect(ctx, sx, sy, 12, 8, '#0E2A1E');
+      if (st === 'boss') { for (let i = 0; i < 12; i++) { const v = Math.round(4 + Math.sin((i + t / 8) * .9) * 2 + i / 4); rect(ctx, sx + i, sy + 8 - Math.min(7, Math.max(1, v)), 1, 1, isNight ? '#3E7A50' : '#8EF0A0') } }
+      else if (st === 'sig') { for (let i = 0; i < 4; i++) rect(ctx, sx + 1 + i * 3, sy + 6 - i, 2, 2 + i, '#47E07A'); if (t % 16 < 8) rect(ctx, sx + 10, sy + 1, 1, 1, '#FFFFFF') }
+      else for (let i = 0; i < 5; i++) { const k = Math.floor(t / 24) + i + s, h = 2 + ((k * 7) % 4), up = (k * 5) % 3 !== 0, top = 1 + ((k * 3) % 3); rect(ctx, sx + 1 + i * 2, sy + top, 1, h, up ? '#47E07A' : '#F0645A') }
+    } else if (st === 'team') { rect(ctx, sx, sy, 12, 8, '#1C2633'); const k = (t >> 3) % 8; for (let r = 0; r < 3; r++) rect(ctx, sx + 1, sy + 1 + r * 2, ((k + r * 3) % 8) + 3, 1, '#7FD1E8') }
+    else if (st === 'wait') { rect(ctx, sx, sy, 12, 8, '#1C2633'); rect(ctx, sx + 1, sy + 2, 7, 1, '#4E6A8C'); rect(ctx, sx + 1, sy + 4, 5, 1, '#4E6A8C'); if (t % 20 < 10) rect(ctx, sx + 7, sy + 4, 1, 2, '#BFD8F2') }
+    else rect(ctx, sx, sy, 12, 8, '#0B0D12');
+    rect(ctx, x + 6, y + 11, 2, 2, '#1B1E25');
+  }
+  function desk(x, y, w, dark) { const top = dark ? '#A86B3B' : '#D9A066', hi = dark ? '#C4844E' : '#EAB880', front = dark ? '#7A4A26' : '#A86B3B'; rect(ctx, x + 2, y + 18, w, 3, 'rgba(30,15,10,0.22)'); rect(ctx, x, y, w, 18, '#3A2414'); rect(ctx, x + 1, y + 1, w - 2, 9, top); rect(ctx, x + 1, y + 1, w - 2, 1, hi); rect(ctx, x + 1, y + 10, w - 2, 7, front); rect(ctx, x + 1, y + 16, w - 2, 1, '#5A3418'); rect(ctx, x + 3, y + 12, 6, 3, dark ? '#5E3A1E' : '#8A5530') }
+  function keyboard(x, y) { rect(ctx, x, y, 12, 4, '#2A1A1A'); rect(ctx, x + 1, y + 1, 10, 2, '#E9E6DD'); for (let i = 0; i < 5; i++) rect(ctx, x + 2 + i * 2, y + 1, 1, 1, '#B8B4A8') }
+  function mug(x, y, col, steam, t) { rect(ctx, x, y, 5, 5, '#2A1A1A'); rect(ctx, x + 1, y + 1, 3, 3, col); rect(ctx, x + 5, y + 2, 1, 2, '#2A1A1A'); if (steam) { const o = (t >> 2) % 6; ctx.fillStyle = 'rgba(255,255,255,' + (.6 - o * .1) + ')'; ctx.fillRect(x + 2, y - 2 - o, 1, 1); ctx.fillRect(x + 1 + (o % 2), y - 4 - o, 1, 1) } }
+  function papers(x, y, n) { for (let i = 0; i < n; i++) { rect(ctx, x, y - i * 2, 7, 3, '#8A7E66'); rect(ctx, x + 1, y - i * 2, 5, 2, '#FFFDF6') } }
+  function zzz(x, y, t) { const o = (t >> 2) % 14, zc = 'rgba(255,253,246,' + (1 - o / 16) + ')'; const Z = (zx, zy) => { ctx.fillStyle = zc; ctx.fillRect(zx, zy, 3, 1); ctx.fillRect(zx + 1, zy + 1, 1, 1); ctx.fillRect(zx, zy + 2, 3, 1) }; Z(x + o / 2, y - o); if (o > 6) Z(x + 4 + o / 3, y - o + 6) }
+  function doc(x, y, kind) { rect(ctx, x, y, 6, 7, '#2A1A1A'); rect(ctx, x + 1, y + 1, 4, 5, kind === 'news' ? '#E8D6F2' : kind === 'scan' ? '#CFF2EA' : kind === 'err' ? '#F6C1B8' : kind === 'cut' ? '#F8D8C0' : '#FFFDF6'); rect(ctx, x + 2, y + 2, 2, 1, '#9A8F75'); rect(ctx, x + 2, y + 4, 2, 1, '#9A8F75') }
+  function lamp(x, y) { rect(ctx, x, y - 8, 1, 8, '#2A1A1A'); rect(ctx, x - 2, y - 10, 5, 2, '#2A1A1A'); rect(ctx, x - 1, y - 9, 3, 1, '#F2C230'); ctx.fillStyle = 'rgba(255,214,120,0.16)'; ctx.beginPath(); ctx.moveTo(x - 2, y - 8); ctx.lineTo(x + 3, y - 8); ctx.lineTo(x + 10, y + 4); ctx.lineTo(x - 9, y + 4); ctx.closePath(); ctx.fill() }
+  function spyLine(t) {
+    const s = SPYB, pts = DATA && DATA.spySpark || [];
+    if (pts.length < 2) return;
+    const lo = Math.min(...pts), hi = Math.max(...pts), span = hi - lo || 1;
+    for (let i = 0; i < pts.length - 1; i++) { const x = s.x + 4 + Math.round(i * 42 / (pts.length - 1)), y = s.y + 28 - Math.round((pts[i] - lo) / span * 10); rect(ctx, x, y, Math.max(1, Math.round(42 / (pts.length - 1))), 1, '#2E9E5B') }
+  }
+
+  // ---------- การเดินส่งเอกสาร: เดินพร้อมกันไม่เกิน 2 คน ----------
+  const sim = { t: 0, walkers: [], queue: [], delivered: 0, replies: [] };
+  const byId = id => AGENTS.find(a => a.id === id);
+  const seat = a => ({ x: a.x + 17, y: a.y - 16 });
+  function pathTo(a, to) {
+    const s = seat(a), lane = a.x - 12;
+    let end;
+    if (to === 'boss') end = [{ x: BOSS_FRONT.x, y: AISLE_Y }, BOSS_FRONT];
+    else { const T = byId(to), ts = seat(T); end = [{ x: T.x - 12, y: AISLE_Y }, { x: T.x - 12, y: ts.y }] }
+    return [s, { x: lane, y: s.y }, { x: lane, y: AISLE_Y }].concat(end);
+  }
+  function step() {
+    const S = sim; S.t++;
+    if (S.queue.length && S.walkers.length < 2 && (!S.walkers.length || S.t - S.walkers[S.walkers.length - 1].born > 45)) {
+      const i = S.queue.findIndex(e => byId(e.who) && !S.walkers.some(w => w.a.id === e.who));
+      if (i >= 0) { const e = S.queue.splice(i, 1)[0], a = byId(e.who); if (a && (e.to === 'boss' || byId(e.to))) { const path = pathTo(a, e.to); S.walkers.push({ a, e, path, i: 1, x: path[0].x, y: path[0].y, ph: 'go', wait: 0, dir: 'down', born: S.t }) } }
+    }
+    for (const w of S.walkers) {
+      if (w.ph === 'wait') { if (--w.wait <= 0) { w.ph = 'back'; w.path = w.path.slice().reverse(); w.i = 1 } continue }
+      const tg = w.path[w.i], dx = tg.x - w.x, dy = tg.y - w.y;
+      if (Math.abs(dx) + Math.abs(dy) <= 1) {
+        w.x = tg.x; w.y = tg.y; w.i++;
+        if (w.i >= w.path.length) {
+          if (w.ph === 'go') {
+            w.ph = 'wait'; w.wait = 60; S.delivered++;
+            const pos = w.e.to === 'boss' ? { x: BOSS.x + 46, y: 78 } : (() => { const s = seat(byId(w.e.to)); return { x: s.x + 12, y: s.y - 2 } })();
+            S.replies.push({ text: w.e.reply, x: pos.x, y: pos.y, until: S.t + 60, boss: w.e.to === 'boss' });
+            document.getElementById('count').textContent = 'ส่งเอกสารแล้ว ' + S.delivered + ' ฉบับ';
+          } else w.done = true;
+        }
+      } else if (dx) { w.x += Math.sign(dx); w.dir = dx > 0 ? 'right' : 'left' }
+      else { w.y += Math.sign(dy); w.dir = dy > 0 ? 'down' : 'up' }
+    }
+    S.walkers = S.walkers.filter(w => !w.done);
+    S.replies = S.replies.filter(r => r.until > S.t);
+  }
+
+  // ---------- overlay ----------
+  const pct = (x, y) => 'left:' + (x / W * 100) + '%;top:' + (y / H * 100) + '%';
+  let TAGS = {}, Q = [], BANG = [], WB = [], RB = [], BOSSTAG = null, SPYTAG = null;
+  function el(cls, html, x, y) { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; d.style.cssText = pct(x, y); ov.appendChild(d); return d }
+  function buildOverlay() {
+    ov.innerHTML = ''; TAGS = {};
+    AGENTS.forEach(a => { TAGS[a.id] = el('tag', '<b></b><span class="chip"></span>', a.x - 2, a.y - 31); TAGS[a.id].querySelector('b').textContent = a.name });
+    BOSSTAG = el('tag', '<b>หัวหน้า · RISK</b><span class="chip boss">DD —</span>', BOSS.x - 14, 60);
+    SPYTAG = el('board', 'SPY<small>—</small>', SPYB.x + 25, SPYB.y + 3);
+    ROOMS.forEach(r => el('room', r.label, r.x, 200));
+    Q = AGENTS.map(a => { const d = el('bubble q', '?', a.x + 29, a.y - 14); d.hidden = true; return d });
+    BANG = AGENTS.map(a => { const d = el('bubble bang', '!', a.x + 29, a.y - 14); d.hidden = true; return d });
+    WB = [el('bubble', '', 0, 0), el('bubble', '', 0, 0)]; RB = [el('bubble', '', 0, 0), el('bubble', '', 0, 0)];
+    WB.concat(RB).forEach(d => d.hidden = true);
+  }
+  function fit() { ov.style.setProperty('--u', (stage.clientWidth / W) + 'px') }
+  let highlight = null;
+  function arrow(x, y, t) { drawRows(['ooooooo', 'oTTTTTo', '.oTTTo.', '..oTo..', '...o...'], x, y - ((t >> 3) % 2), { o: '#0E3B36', T: '#2EC4B6' }) }
+
+  function draw() {
+    if (!BOSS) return;
+    const t = sim.t;
+    ctx.drawImage(bg, 0, 0);
+    WINDOWS.forEach(x => windowAt(x, t));
+    clock(BOSS.x + 80, 6);
+    spyLine(t);
+    for (const w of sim.walkers) {
+      if (w.ph !== 'go') continue;
+      const p = w.path; let acc = 0;
+      for (let i = w.i - 1; i < p.length - 1; i++) {
+        const a = i === w.i - 1 ? { x: w.x, y: w.y } : p[i], c = p[i + 1], len = Math.abs(c.x - a.x) + Math.abs(c.y - a.y);
+        for (let s = 0; s < len; s++, acc++) { if ((acc + t) % 6 !== 0) continue; rect(ctx, a.x + Math.sign(c.x - a.x) * s + 6, a.y + Math.sign(c.y - a.y) * s + 20, 2, 2, 'rgba(46,196,182,0.85)') }
+      }
+    }
+    const walking = new Set(sim.walkers.map(w => w.a.id));
+    const segOne = w => (w.ph === 'go' && w.i <= 1) || (w.ph === 'back' && w.i >= w.path.length - 1);
+    const asleep = a => (isNight || a.st === 'stop') && a.st !== 'error';
+    ROWS.forEach(ry => {
+      AGENTS.filter(a => a.y === ry).forEach(a => { partition(a.x, a.y); chair(a.x, a.y, a.team ? '#4E6A55' : '#4A5578') });
+      if (ry === 128) {
+        rect(ctx, BOSS.x + 18, 72, 28, 18, '#22222E'); rect(ctx, BOSS.x + 19, 73, 26, 16, '#8E2F3A'); rect(ctx, BOSS.x + 19, 73, 26, 2, 'rgba(255,255,255,0.2)');
+        const talking = sim.replies.some(r => r.boss);
+        drawChar(BOSS, BOSS.x + 26, 80 + ((t >> 4) % 2 && talking ? 1 : 0), { tie: true, sleep: isNight && !talking });
+        desk(BOSS.x, BOSS.y, BOSS.w, true); screen(BOSS.x + 4, BOSS.y - 10, 'boss', t, 0);
+        rect(ctx, BOSS.x + 24, BOSS.y + 12, 16, 3, '#2A1A1A'); rect(ctx, BOSS.x + 25, BOSS.y + 12, 14, 2, '#E8C25A');
+        papers(BOSS.x + 50, BOSS.y + 6, Math.min(6, 1 + sim.delivered));
+        if (isNight && !talking) zzz(BOSS.x + 44, BOSS.y - 24, t);
+      }
+      AGENTS.filter(a => a.y === ry && !walking.has(a.id)).forEach(a => { const s = seat(a); drawChar(a, s.x, s.y, { sleep: asleep(a) }) });
+      sim.walkers.filter(w => w.a.y === ry && segOne(w)).forEach(w => drawWalker(w, t));
+      AGENTS.filter(a => a.y === ry).forEach((a, k) => {
+        desk(a.x, a.y, DESK_W, false); screen(a.x + 3, a.y - 10, a.st, t, k * 3);
+        keyboard(a.x + 17, a.y + 3); mug(a.x + 37, a.y + 2, a.mug, !isNight && a.st === 'hold', t + k * 5); papers(a.x + 30, a.y + 6, 1 + (a.n ? Math.min(3, Math.ceil(a.n / 4)) : 0));
+        if (!isNight && (a.st === 'hold' || a.st === 'sig' || a.team) && !walking.has(a.id)) { const f = (t >> 2) % 2; rect(ctx, a.x + 19 + f * 2, a.y + 2, 2, 1, a.skin); rect(ctx, a.x + 25 - f * 2, a.y + 2, 2, 1, a.skin) }
+        if (asleep(a) && !walking.has(a.id)) zzz(a.x + 30, a.y - 20, t + k * 9);
+      });
+    });
+    sim.walkers.filter(w => !segOne(w)).forEach(w => drawWalker(w, t));
+    if (isNight) {
+      ctx.fillStyle = 'rgba(12,14,38,0.62)'; ctx.fillRect(0, 34, W, H - 34);
+      ctx.fillStyle = 'rgba(12,14,38,0.35)'; ctx.fillRect(0, 0, W, 34);
+      lamp(BOSS.x + 6, BOSS.y + 2);
+      sim.walkers.forEach(w => { ctx.fillStyle = 'rgba(255,230,160,0.14)'; ctx.fillRect(w.x - 4, w.y - 2, 20, 26) });
+    }
+    if (highlight) { const w = sim.walkers.find(v => v.a.id === highlight), a = byId(highlight); if (a) { const p = w ? { x: w.x, y: w.y } : seat(a); arrow(p.x + 2, p.y - 9, t) } }
+    AGENTS.forEach((a, i) => {
+      Q[i].hidden = !(!isNight && a.st === 'wait' && !walking.has(a.id) && ((t + i * 47) % 220) < 40);
+      BANG[i].hidden = !(a.st === 'error' && !walking.has(a.id) && (t % 24) < 16);
+    });
+    WB.forEach((d, i) => { const w = sim.walkers[i], talk = w && (w.ph === 'wait' || (w.ph === 'go' && w.i <= 2)); d.hidden = !talk; if (talk) { d.textContent = w.e.msg; d.style.cssText = pct(w.x + 13, w.y - 2) } });
+    RB.forEach((d, i) => { const r = sim.replies[i]; d.hidden = !r; if (r) { d.textContent = r.text; d.style.cssText = pct(r.x, r.y) } });
+  }
+  function drawWalker(w, t) {
+    const moving = w.ph !== 'wait', frame = moving ? 1 + ((t >> 2) % 2) : 0, bob = moving && (t >> 2) % 2 ? 1 : 0;
+    drawChar(w.a, w.x, w.y - bob, { back: w.dir === 'up' && moving, frame, shadow: true });
+    if (w.ph !== 'back') doc(w.x + (w.dir === 'up' ? 3 : 8), w.y + 11 - bob, w.e.k);
+  }
+
+  // ---------- ข้อมูลจริง ----------
+  let DATA = null, lastId = null, ROSTER = '';
+  function classify(r) {
+    const ev = r.event || '', d = (() => { try { return JSON.parse(r.detail || 'null') || {} } catch (e) { return {} } })();
+    const P = r.portfolio || '';
+    if (/ล้มเหลว|ไม่สำเร็จ/.test(ev)) return { k: 'err', who: r.agent === 'news' ? 'news' : r.agent === 'data' || r.agent === 'scan' ? 'scan' : (P || 'scan'), to: 'boss', text: ev, msg: 'error: ' + ev.slice(0, 28) };
+    if (r.agent === 'scan') return { k: 'scan', who: 'scan', to: 'breakout', text: ev, msg: ev.replace(/^สแกน /, '') };
+    if (r.agent === 'data' && /^W1: อัปเดตรายชื่อ/.test(ev)) return { k: 'scan', who: 'scan', to: 'momentum_wide', text: ev.replace(/^W1: /, ''), msg: 'รายชื่อหุ้นใหม่' };
+    if (r.agent === 'news' && /^ข่าว /.test(ev)) return { k: 'news', who: 'news', to: (d.held_by || [])[0] || 'boss', text: ev.replace(/^ข่าว /, '') + (d.held_by ? ' · ถือโดย ' + d.held_by.map(x => (LOOK[x] || { name: x }).name).join(', ') : ''), msg: ev.replace(/^ข่าว /, '').slice(0, 34), all: d.held_by || [] };
+    if (r.agent === 'execution' && /^SELL/.test(ev)) return /stop/.test(ev) ? { k: 'cut', who: P, to: 'boss', text: 'ขาย' + ev.slice(4), msg: 'ขาย' + ev.slice(4).split('@')[0].trim() } : { k: 'reb', who: P, to: 'boss', text: 'ขาย' + ev.slice(4), msg: 'ขาย' + ev.slice(4).split(' ').slice(0, 2).join(' ') };
+    if (r.agent === 'execution' && /^BUY/.test(ev)) return { k: 'buy', who: P, to: 'boss', text: 'ซื้อแล้ว' + ev.slice(3), msg: 'ซื้อ' + ev.slice(3).split(' ').slice(0, 2).join(' ') };
+    if (r.agent === 'orchestrator' && /แพ็กเกจ #/.test(ev)) {
+      const n = d.orders != null ? d.orders : +((ev.match(/ซื้อ (\d+)/) || [])[1] || 0);
+      if (!n) return null;
+      const auto = /\(auto\)|W1:/.test(ev);
+      return { k: 'buy', who: P, to: 'boss', text: ev.replace(/^W1: /, '') + (auto ? ' · อนุมัติอัตโนมัติ' : ' · รอคุณอนุมัติ'), msg: 'แพ็กเกจใหม่ ' + n + ' ออเดอร์', reply: auto ? 'อนุมัติอัตโนมัติ' : 'รอเจ้าของอนุมัติ' };
+    }
+    return null;
+  }
+  const REPLY = { buy: 'รับทราบ', cut: 'รับทราบ คุมความเสี่ยงดี', reb: 'รับทราบ', news: 'ขอบคุณ', scan: 'ขอบคุณ', err: 'เดี๋ยวให้ทีมเช็ค' };
+
+  function compute(D) {
+    const ids = D.portfolios, eq = {}, out = { per: {} };
+    D.equity.forEach(r => (eq[r.portfolio] = eq[r.portfolio] || []).push(r));
+    const px = D.last_prices || {}, intra = Object.fromEntries((D.intraday || []).map(r => [r.portfolio, r]));
+    const open = {}; (D.open_orders || []).forEach(r => { const o = open[r.portfolio] = open[r.portfolio] || { pending: 0, approved: 0, buys: 0 }; if (r.status === 'approved') o.approved += r.n; else o.pending += r.n; if (r.side === 'BUY') o.buys += r.n });
+    const lastEv = {};
+    (D.journal || []).forEach(r => { if (r.portfolio && !lastEv[r.portfolio] && /แพ็กเกจ|BUY|SELL|ข้าม/.test(r.event)) lastEv[r.portfolio] = r.time });
+    const errs = {}; (D.journal || []).forEach(r => { if (r.portfolio && /ล้มเหลว/.test(r.event) && (Date.now() - Date.parse(r.time.length > 10 ? r.time + '+07:00' : r.time + 'T12:00:00+07:00')) < 36e5 * 30) errs[r.portfolio] = r.event });
+    let total = 0, cap = 0, bench = 0, held = new Set(), worst = { dd: 0, id: null };
+    ids.forEach(id => {
+      const S = eq[id] || [], last = S[S.length - 1], st = D.per[id] || {}, capital = st.capital || 10000;
+      const pos = (D.positions || []).filter(p => p.portfolio === id);
+      let usd = last ? last.usd : capital * 0.9975, b = last ? last.bench_usd : capital * 0.9975;
+      if (intra[id] && last && intra[id].ts.slice(0, 10) >= last.date) usd = intra[id].usd;
+      if (intra.SPY && last && intra.SPY.ts.slice(0, 10) >= last.date) b = intra.SPY.usd * (b / (eq.momentum && eq.momentum.length ? eq.momentum[eq.momentum.length - 1].bench_usd : b));
+      const peak = Math.max(usd, ...S.map(r => r.usd)), dd = peak > 0 ? 1 - usd / peak : 0;
+      const risky = pos.filter(p => p.ticker !== 'SHY');
+      risky.forEach(p => held.add(p.ticker));
+      const pl = risky.map(p => { const c = p.cost_usd / p.shares, q = px[p.ticker]; return q ? { t: p.ticker, r: q / c - 1, q } : null }).filter(Boolean);
+      const star = pl.sort((a, c) => Math.abs(c.r) - Math.abs(a.r))[0] || null;
+      const o = open[id] || { pending: 0, approved: 0, buys: 0 };
+      const status = errs[id] ? 'error' : st.paused ? 'stop' : (o.pending + o.approved) > 0 ? 'sig' : risky.length ? 'hold' : 'wait';
+      out.per[id] = { usd, bench: b, capital, ret: usd / capital - 1, spy: b / capital - 1, dd, n: risky.length, star, stops: st.stops || {}, open: o, status, err: errs[id], last: lastEv[id] || (last && last.date) };
+      total += usd; cap += capital; bench += b;
+      if (dd >= worst.dd) worst = { dd, id };
+    });
+    out.total = total; out.cap = cap; out.bench = bench; out.held = held.size; out.worst = worst;
+    const mom = eq.momentum || []; out.spySpark = mom.slice(-30).map(r => r.bench_usd);
+    out.spyRet = mom.length ? mom[mom.length - 1].bench_usd / (mom[0].bench_usd || 1) - 1 : 0;
+    out.spySince = mom.length ? mom[0].date : null;
+    return out;
+  }
+
+  function applyData(D) {
+    const C = compute(D);
+    DATA = Object.assign({}, D, C);
+    const roster = D.portfolios.join(',');
+    if (roster !== ROSTER) { ROSTER = roster; layout(D.portfolios); buildOverlay(); buildCards(); fit() }
+    // ---- สถานะตัวละคร
+    AGENTS.forEach(a => {
+      if (a.team) return;
+      const p = C.per[a.id]; if (!p) return;
+      a.st = p.status; a.n = p.status === 'sig' ? p.open.buys || p.open.pending + p.open.approved : p.n;
+    });
+    const sc = byId('scan'), nw = byId('news');
+    const stale = dataStale(D);
+    const scanErr = (D.journal || []).find(r => (r.agent === 'data' || r.agent === 'scan') && /ล้มเหลว|ไม่สำเร็จ/.test(r.event) && r.time.slice(0, 10) === todayTh());
+    sc.st = stale || scanErr ? 'error' : 'team';
+    nw.st = D.news.error || (D.news.enabled && D.news.date && (Date.now() - Date.parse(D.news.date + 'T00:00:00Z')) > 36e5 * 60) ? 'error' : 'team';
+    const nf = Object.values(D.news.stocks || {}), nCaution = nf.filter(s => s.flag === 'caution').length, nBlock = nf.filter(s => s.flag === 'block').length;
+    const w1 = (D.last_packets || []).find(p => p.portfolio === 'breakout');
+    AGENTS.forEach(a => {
+      const chip = TAGS[a.id].querySelector('.chip');
+      chip.className = 'chip ' + a.st;
+      chip.textContent = a.id === 'scan' ? (sc.st === 'error' ? 'error' : (D.universe ? (D.universe.n_sp500 + D.universe.n_extra).toLocaleString() + ' ตัว' : 'ทำงานปกติ'))
+        : a.id === 'news' ? (nw.st === 'error' ? 'error' : nBlock ? 'ห้ามซื้อ ' + nBlock : 'ธงระวัง ' + nCaution)
+        : a.st === 'hold' ? 'ถือ ' + a.n + ' ตัว' : a.st === 'sig' ? 'สัญญาณ ' + a.n + ' ตัว' : STATUS_TH[a.st];
+    });
+    // ---- หัวหน้า + SPY
+    const hot = C.worst.dd >= DD_CUT;
+    BOSSTAG.querySelector('.chip').className = 'chip ' + (hot ? 'warn' : 'boss');
+    BOSSTAG.querySelector('.chip').textContent = 'DD ' + (C.worst.dd * 100).toFixed(1) + '% / 20%' + (hot ? ' ลดไม้ครึ่ง' : '');
+    SPYTAG.innerHTML = 'SPY<small></small>';
+    SPYTAG.querySelector('small').textContent = fmtPct(C.spyRet) + (C.spySince ? ' ตั้งแต่ ' + thDay.format(new Date(C.spySince + 'T12:00:00+07:00')) : '');
+    // ---- แถบบน
+    document.getElementById('k-val-l').textContent = 'มูลค่าพอร์ตรวม (paper · ' + D.portfolios.length + ' พอร์ต)';
+    document.getElementById('k-val').textContent = fmtUsd(C.total);
+    document.getElementById('k-val-s').textContent = 'ทุนตั้งต้น ' + fmtUsd(C.cap);
+    const r = C.total / C.cap - 1, s = C.bench / C.cap - 1;
+    const kr = document.getElementById('k-ret'); kr.textContent = fmtPct(r); kr.className = 'num ' + (r >= 0 ? 'up' : 'down');
+    document.getElementById('k-ret-s').innerHTML = 'SPY <span class="' + (s >= 0 ? 'up' : 'down') + '">' + fmtPct(s) + '</span> · ' + (r >= s ? 'นำ ' : 'ตามหลัง ') + Math.abs((r - s) * 100).toFixed(2) + ' จุด';
+    document.getElementById('k-dd').textContent = '−' + (C.worst.dd * 100).toFixed(1) + '%';
+    const bar = document.querySelector('#k-dd-bar i'); bar.style.width = Math.min(100, C.worst.dd / DD_CUT * 100) + '%'; bar.className = hot ? 'hot' : '';
+    document.getElementById('k-dd-bar').setAttribute('aria-label', 'drawdown ' + (C.worst.dd * 100).toFixed(1) + '% จากเกณฑ์ 20%');
+    document.getElementById('k-dd-box').className = 'kpi' + (hot ? ' warnbox' : '');
+    const ks = document.getElementById('k-dd-s'); ks.className = 'sm ' + (hot ? 'warnc' : 'up');
+    ks.textContent = (C.worst.id ? (LOOK[C.worst.id] || { name: C.worst.id }).name + ' · ' : '') + (hot ? 'โหมดลดไม้ครึ่งทำงานอยู่' : 'ทุกพอร์ตใช้ไม้เต็ม');
+    document.getElementById('k-hold').textContent = C.held;
+    const withPos = Object.values(C.per).filter(p => p.n).length, waiting = (C.per.breakout && C.per.breakout.open.buys) || 0;
+    document.getElementById('k-hold-s').textContent = withPos + ' พอร์ตที่มีของ' + (waiting ? ' · W1 รอซื้ออีก ' + waiting + ' ตัว' : '');
+    // ---- การรัน
+    const dataRow = (D.journal || []).find(r => r.agent === 'data' && /^โหลดข้อมูลจาก/.test(r.event));
+    const wd = (D.journal || []).find(r => r.agent === 'system' && /^watchdog/.test(r.event));
+    const runs = D.runs || [], lr = runs[0];
+    const rd = document.getElementById('run-dot'), rt = document.getElementById('run-txt');
+    if (lr && lr.status !== 'completed') { rd.className = 'dot busy'; rt.textContent = 'GitHub Actions กำลังรัน' }
+    else if (lr && lr.conclusion && lr.conclusion !== 'success') { rd.className = 'dot off'; rt.textContent = 'GitHub Actions รอบล่าสุดล้มเหลว' }
+    else if (stale) { rd.className = 'dot off'; rt.textContent = 'ข้อมูลปิดตลาดยังไม่อัปเดต' }
+    else { rd.className = 'dot'; rt.textContent = 'GitHub Actions รอบรายวัน' }
+    document.getElementById('run-time').textContent = dataRow ? whenTh(dataRow.time) : (lr ? thTime.format(new Date(lr.updated)) : '—');
+    document.getElementById('wd-time').textContent = wd ? whenTh(wd.time) : '—';
+    document.getElementById('wd-dot').className = 'dot' + (stale ? ' off' : '');
+    document.getElementById('asof').textContent = 'ข้อมูลปิดตลาด ' + (D.last_data || '—') + ' · อัปเดตหน้า ' + thTime.format(new Date());
+    // ---- การ์ด + สมุด + เหตุการณ์ใหม่
+    renderCards(C, D, { nCaution, nBlock, w1, stale });
+    const rows = (D.journal || []).map(r => Object.assign({ r }, classify(r) || {})).filter(x => x.k);
+    renderLog(rows);
+    if (lastId != null) {
+      const fresh = rows.filter(x => x.r.id > lastId).reverse();
+      fresh.forEach(x => {
+        const targets = x.k === 'news' && x.all && x.all.length ? x.all.slice(0, 2) : [x.to];
+        targets.forEach(to => sim.queue.push({ who: x.who, to, k: x.k, msg: x.msg, reply: x.reply || REPLY[x.k] }));
+      });
+      if (fresh.length) document.querySelectorAll('#log li').forEach((li, i) => { if (i < fresh.length) li.className = 'fresh' });
+    }
+    lastId = (D.journal || []).reduce((m, r) => Math.max(m, r.id), lastId || 0);
+  }
+  function dataStale(D) {
+    const want = lastClosedSession(Date.now());
+    if (!want || !D.last_data) return false;
+    if (D.last_data >= want) return false;
+    // ปิดตลาดแล้วแต่ยังไม่ได้ราคาปิด: ให้เวลาระบบถึง 12:00 น. เวลาไทย (Yahoo ออกราคาราว 10:00, watchdog รันถึง 11:59)
+    const nyClose = nyToUtc(+want.slice(0, 4), +want.slice(5, 7), +want.slice(8, 10), 16, 0);
+    const thNoonAfter = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date(nyClose + 9 * 36e5)) + 'T12:00:00+07:00').getTime();
+    return Date.now() > Math.max(thNoonAfter, nyClose + 18 * 36e5);
+  }
+
+  const KIND = { buy: ['สัญญาณซื้อ', 'k-buy'], tp: ['ขายที่ TP', 'k-tp'], cut: ['ขายที่ cutloss', 'k-cut'], reb: ['ขายปรับพอร์ต', 'k-reb'], news: ['ข่าวสำคัญ', 'k-news'], scan: ['สแกนเสร็จ', 'k-scan'], err: ['error', 'k-err'] };
+  function renderLog(rows) {
+    const ul = document.getElementById('log'); ul.innerHTML = '';
+    if (!rows.length) { const li = document.createElement('li'); li.innerHTML = '<span></span><span></span><span></span><span class="what">ยังไม่มีเหตุการณ์</span>'; ul.appendChild(li); return }
+    rows.slice(0, 14).forEach(x => {
+      const li = document.createElement('li');
+      const tm = document.createElement('time'); tm.textContent = whenTh(x.r.time);
+      const who = document.createElement('span'); who.className = 'who'; who.textContent = (LOOK[x.who] || { name: x.who }).name;
+      const kind = document.createElement('span'); kind.className = 'kind ' + KIND[x.k][1]; kind.textContent = KIND[x.k][0];
+      const what = document.createElement('span'); what.className = 'what'; what.textContent = x.text;
+      li.append(tm, who, kind, what); ul.appendChild(li);
+    });
+  }
+
+  // ---------- การ์ด ----------
+  let CARD = {};
+  function buildCards() {
+    const wrap = document.getElementById('cards'); wrap.innerHTML = ''; CARD = {};
+    const pinned = () => { const p = [...wrap.querySelectorAll('.card')].find(c => c._pinned); return p ? p._id : null };
+    AGENTS.forEach(a => {
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'card' + (a.team ? ' team' : ''); btn.setAttribute('aria-pressed', 'false');
+      const av = document.createElement('canvas'); av.width = 12; av.height = 20; av.setAttribute('aria-hidden', 'true');
+      cur = av.getContext('2d'); drawChar(a, 0, 0, {}); cur = ctx;
+      btn.innerHTML = '<span class="top"><span class="av"></span><span class="who"><span class="nm"></span><span class="mk"></span></span><span class="grp"></span></span><span class="chip"></span><span class="mid"></span><span class="stats"></span><span class="foot"></span>';
+      btn.querySelector('.av').replaceWith(av);
+      btn.querySelector('.nm').textContent = a.name; btn.querySelector('.mk').textContent = a.mk;
+      btn.querySelector('.grp').textContent = a.team ? 'ทีมสนับสนุน' : AUTO.has(a.id) ? 'อัตโนมัติ' : 'รอคุณอนุมัติ';
+      btn.addEventListener('mouseenter', () => { if (!btn._pinned) highlight = a.id });
+      btn.addEventListener('mouseleave', () => { if (!btn._pinned && highlight === a.id) highlight = pinned() });
+      btn.addEventListener('click', () => { const on = !btn._pinned; wrap.querySelectorAll('.card').forEach(c => { c._pinned = false; c.setAttribute('aria-pressed', 'false') }); btn._pinned = on; btn.setAttribute('aria-pressed', String(on)); highlight = on ? a.id : null });
+      btn._id = a.id; CARD[a.id] = btn; wrap.appendChild(btn);
+    });
+  }
+  function setStats(el, cells) {
+    el.innerHTML = '';
+    cells.forEach(([l, v, c]) => { const sp = document.createElement('span'); sp.textContent = l; const bb = document.createElement('b'); bb.textContent = v; if (c) bb.className = c; sp.appendChild(bb); el.appendChild(sp) });
+  }
+  function renderCards(C, D, x) {
+    AGENTS.forEach(a => {
+      const btn = CARD[a.id]; if (!btn) return;
+      const chip = btn.querySelector('.chip'), mid = btn.querySelector('.mid'), stats = btn.querySelector('.stats'), foot = btn.querySelector('.foot');
+      chip.className = 'chip ' + a.st; chip.textContent = TAGS[a.id].querySelector('.chip').textContent;
+      btn.classList.toggle('error', a.st === 'error');
+      btn.setAttribute('aria-label', a.name + ' ' + chip.textContent + ' แสดงตำแหน่งในออฟฟิศ');
+      mid.className = 'mid idle'; mid.innerHTML = '';
+      if (a.id === 'scan') {
+        const sr = (D.journal || []).find(r => r.agent === 'scan');
+        const det = sr ? (() => { try { return JSON.parse(sr.detail) } catch (e) { return {} } })() : {};
+        mid.textContent = x.stale ? 'ข้อมูลปิดตลาดล่าสุด ' + D.last_data + ' ยังไม่อัปเดตตามเวลาที่ควร' : sr ? sr.event + (det.signals && det.signals.length ? ': ' + det.signals.slice(0, 6).join(', ') + (det.signals.length > 6 ? ' …' : '') : '') : 'ยังไม่มีรอบสแกนรายวัน';
+        setStats(stats, [['รายชื่อ', D.universe ? (D.universe.n_sp500 + D.universe.n_extra).toLocaleString() : '—'], ['นอก S&P', D.universe ? D.universe.n_extra.toLocaleString() : '—'], ['สัญญาณล่าสุด', det.signals ? String(det.signals.length) : '—'], ['ล่าสุด', sr ? whenTh(sr.time) : '—']]);
+        foot.textContent = D.universe ? 'รายชื่ออัปเดต ' + D.universe.date : '';
+        return;
+      }
+      if (a.id === 'news') {
+        const held = new Set((D.positions || []).map(p => p.ticker));
+        const hot = Object.entries(D.news.stocks || {}).filter(([t, s]) => held.has(t) && (s.flag !== 'ok' || s.items.length)).slice(0, 3);
+        mid.textContent = D.news.error ? D.news.error : hot.length ? 'หุ้นที่ถืออยู่: ' + hot.map(([t, s]) => t + ' ' + (s.flag !== 'ok' ? s.reason : s.items[0].th).slice(0, 48)).join(' · ') : 'ไม่มีข่าวสำคัญของหุ้นที่ถืออยู่';
+        const nr = (D.journal || []).find(r => r.agent === 'news' && r.event === 'สรุปข่าวประจำวัน');
+        setStats(stats, [['ติดตาม', Object.keys(D.news.stocks || {}).length + ' ตัว'], ['ธงระวัง', String(x.nCaution)], ['ห้ามซื้อ', String(x.nBlock)], ['ล่าสุด', nr ? whenTh(nr.time) : '—']]);
+        foot.textContent = 'ข่าวดีใช้กับพอร์ต AI เท่านั้น ข่าวร้ายแรงบล็อกทุกพอร์ต';
+        return;
+      }
+      const p = C.per[a.id]; if (!p) return;
+      if (p.err) mid.textContent = p.err;
+      else if (p.star) {
+        mid.className = 'mid pos';
+        mid.innerHTML = '<span class="ln"><span></span><b></b></span><span class="lv"><span></span><span></span></span>';
+        mid.querySelector('.ln span').textContent = p.star.t + (p.star.r >= 0 ? ' · กำไรมากสุด' : ' · ขาดทุนมากสุด');
+        const pl = mid.querySelector('.ln b'); pl.textContent = fmtPct(p.star.r, 1); pl.className = p.star.r >= 0 ? 'up' : 'down';
+        const st = p.stops[p.star.t], lv = mid.querySelectorAll('.lv span');
+        lv[0].textContent = st ? 'cutloss ' + st.stop.toFixed(2) + ' (' + fmtPct(st.stop / p.star.q - 1, 1) + ')' : 'cutloss ไม่มี';
+        lv[1].textContent = 'TP —';
+      } else if (a.st === 'sig') mid.textContent = 'มีออเดอร์รอซื้อขาย ' + (p.open.pending + p.open.approved) + ' รายการ' + (p.open.pending ? ' · รอคุณอนุมัติ ' + p.open.pending : ' · รอตลาดเปิด');
+      else if (a.st === 'stop') mid.textContent = 'พักอยู่ (kill switch) ไม่สร้างแพ็กเกจใหม่';
+      else mid.textContent = 'ยังไม่มีหุ้น · รอสัญญาณรอบถัดไป';
+      setStats(stats, [['มูลค่า', fmtUsd(p.usd)], ['ผลตอบแทน', fmtPct(p.ret), p.ret >= 0 ? 'up' : 'down'], ['SPY ช่วงเดียวกัน', fmtPct(p.spy)], ['DD พอร์ต', (p.dd ? '−' : '') + (p.dd * 100).toFixed(1) + '%']]);
+      foot.textContent = 'ถือ ' + p.n + ' ตัว · เหตุการณ์ล่าสุด ' + whenTh(p.last);
+    });
+  }
+
+  // ---------- ดึงข้อมูล ----------
+  let timer = null;
+  async function load() {
+    clearTimeout(timer);
+    try {
+      const r = await fetch('/api/office', { credentials: 'same-origin' });
+      if (r.status === 401) { showAlert('ต้องเข้าสู่ระบบก่อน <a href="/">ไปหน้าเข้าสู่ระบบ</a> แล้วกลับมาหน้านี้'); return }
+      if (!r.ok) throw new Error('Worker ตอบ ' + r.status);
+      applyData(await r.json());
+      document.getElementById('alert').hidden = true;
+    } catch (e) { showAlert('ดึงข้อมูลไม่สำเร็จ (' + String(e.message || e).slice(0, 80) + ') จะลองใหม่อัตโนมัติ') }
+    timer = setTimeout(load, market(Date.now()).open ? 60000 : 300000);
+  }
+  function showAlert(html) { const a = document.getElementById('alert'); a.innerHTML = html; a.hidden = false }
+  function updateMarket() {
+    const now = Date.now(), m = market(now);
+    const left = m.next ? Math.max(0, m.next - now) : 0, hh = Math.floor(left / 3600000), mm = Math.floor(left % 3600000 / 60000);
+    document.getElementById('mk-dot').className = 'dot' + (m.open ? '' : ' night');
+    document.getElementById('mk-txt').textContent = m.open ? 'ตลาดเปิดอยู่' + (m.early ? ' (ปิดเร็ววันนี้)' : '') : 'ตลาดปิด' + (m.holiday ? ' · วันหยุดตลาด' : '');
+    document.getElementById('mk-next').textContent = m.next ? (m.open ? 'ปิด ' : 'เปิด ') + thFmt.format(new Date(m.next)) + ' น. เวลาไทย · อีก ' + hh + ' ชม. ' + mm + ' นาที' : '';
+    const was = isNight; isNight = !m.open;
+    if (was && !isNight && DATA) load();   // ตลาดเพิ่งเปิด: ดึงข้อมูลถี่ขึ้นทันที
+  }
+
+  // ---------- loop & controls ----------
+  let speed = 1, paused = false, last = 0, accT = 0;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const playBtn = document.getElementById('btn-play');
+  function setPaused(p) { paused = p; playBtn.textContent = p ? 'เล่นต่อ' : 'หยุดชั่วคราว'; playBtn.setAttribute('aria-pressed', String(p)) }
+  playBtn.addEventListener('click', () => setPaused(!paused));
+  [1, 2, 3].forEach(n => document.getElementById('btn-s' + n).addEventListener('click', () => { speed = n; [1, 2, 3].forEach(m => document.getElementById('btn-s' + m).setAttribute('aria-pressed', String(m === n))) }));
+  if (reduce) setPaused(true);
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(stage); else window.addEventListener('resize', fit);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load() });
+  updateMarket(); setInterval(updateMarket, 30000);
+  layout(Object.keys(LOOK).filter(k => !LOOK[k].team)); buildOverlay(); buildCards(); fit();
+  load();
+  function frame(ts) { if (!last) last = ts; const dt = Math.min(100, ts - last); last = ts; if (!paused) { accT += dt * speed; while (accT >= 33) { step(); accT -= 33 } } draw(); requestAnimationFrame(frame) }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
