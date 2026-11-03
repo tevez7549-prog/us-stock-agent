@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 50
     env:
       WORKER_URL: https://us-stock-agent.tevez7549.workers.dev
+      SEC_CONTACT: ${{ secrets.SEC_CONTACT }}   # อีเมลผู้ติดต่อ SEC (secret ไม่โชว์ใน log)
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       TZ: Asia/Bangkok
     steps:

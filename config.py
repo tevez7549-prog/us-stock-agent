@@ -49,8 +49,9 @@ SP500_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "universe"
 SP500_URL = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
 UNIVERSE = {}
 # SEC บังคับให้ระบุผู้ติดต่อ (ชื่อ + อีเมล) ใน User-Agent ของโปรแกรมอัตโนมัติ ไม่งั้นตอบ 403
-# เจ้าของอนุญาตให้ใช้อีเมลนี้กับ SEC เท่านั้น (2026-10-23) — ห้ามส่งไปบริการอื่น
-SEC_USER_AGENT = f"us-stock-agent {os.environ.get('SEC_CONTACT') or 'tevez7549@gmail.com'}"
+# อีเมลผู้ติดต่อ (เจ้าของอนุญาตให้ใช้กับ SEC เท่านั้น) เก็บนอกโค้ดเพราะ repo เป็น public (2026-11-03):
+# GitHub Actions secret SEC_CONTACT / ไฟล์ .env บนเครื่อง — ไม่มีค่า = SEC อาจตอบ 403 แล้วตัวอ่านข่าวใช้ Finnhub อย่างเดียว
+SEC_USER_AGENT = f"us-stock-agent {os.environ.get('SEC_CONTACT') or 'github.com/tevez7549-prog/us-stock-agent'}"
 
 
 def yf_symbol(sym):
