@@ -179,3 +179,28 @@ W1 passes validate (Sharpe 0.92 vs 0.69, DD half of SPY, CAGR ≈ SPY) and beats
 (Sharpe 0.73 vs 0.92, DD deeper, CAGR 9.5 vs 13.1, ≈ random median). Verdict: none pass. Equal-weight sizing raised
 CAGR vs 1% sizing (W1 vs S3: +2.3%/yr validate, same DD) — the under-investment diagnosis was right — but 2011–2019
 (steady bull, few deep pullbacks) still favours buy-and-hold. Holdouts stay sealed.
+
+## 2026-11-05 (10) Dan Zanger breakout method (owner's screenshot of a 5-step post; research/zanger.py), grid fixed before running
+Rules made numeric: base = prior 25 days, range ≤ 20% of pivot (25-day high), last-5-day volume ≤ 70% of 50-day avg;
+leader = close > SMA50 > SMA200 and +30% in 126 days; breakout = close > pivot with volume ≥ 3× prior 20-day avg;
+buy next open unless > pivot +5%; stop pivot −7% (Low, gap → open); exit all on close < SMA20 (stand-in for the
+hand-drawn up-trendline); half-sell on 3 strong up days (≥ 1 ATR each) or 3× volume down day ≥ 1 ATR; fundamentals =
+latest quarter revenue YoY ≥ 25% (40% leaves almost no large caps), faster than prior quarter, net income up YoY
+(SEC, usable from filed date); top 2 GICS sectors by median 63-day return; SPY > SMA200 for new entries; 5% × ≤ 20
+(same as W1). Grid: W1 (baseline), Z0 technical, Z0n = Z0 without volume rules, Z0w = Z0 entries + W1 exits,
+Z1 = Z0 + fundamentals, Z2 = Z1 + top sectors, Z3 = Z0 + half-sells, Z4 = Z2 + half-sells; R = random entries
+(above SMA200) with Z0 exits, 20 seeds. Universes A = PIT S&P 500, B = A + current S&P 400 (survivorship).
+Not testable: intraday scaling-in (30–50% / 75% / 100% by hours) and the 20-minute failure exit.
+Result (search 2011–19 / validate 2020-01..2024-10, CAGR/Sharpe/DD; SPY 13.1/0.92/−19.4 · 14.7/0.69/−33.7):
+Signals per year (A / B): Z0 1.6 / 8.4, Z1 0.2 / 1.1, Z2 0.0 / 0.4 → the full rule set almost never fires on
+S&P 500/400 daily data; invested ≈ 0–1%, results meaningless (Z0 A: 13 trades in 16 years, PF 0.16).
+A: W1 9.8/0.76/−21.4 · 14.9/0.94/−18.0 (PF 1.99); Z0n −0.4/−0.04/−24.6 · −1.2/−0.11/−21.1 (2,883 trades, PF 0.95);
+   Z0w 0.7/0.54/−2.6 · −0.2/−0.17/−3.5 (24 trades); random+Z0 exits median −2.6 · −1.4 (p95 −1.0 · 1.3).
+B: W1 14.6/0.88/−28.0 · 22.6/0.68/−34.4 (vol 33% in validate — likely a bad S&P 400 price bar, not checked);
+   Z0 −0.6/−0.67/−6.2 · −0.6/−1.23/−3.4 (65 trades, PF 0.44); Z0n 0.8/0.07/−22.3 · 1.8/0.13/−24.7 (PF 1.03);
+   Z0w 2.0/0.45/−8.3 · −1.6/−0.67/−9.9 (122 trades, PF 2.33 search / 0.51 validate); random median −3.0 · −1.1.
+Verdict: none pass. (1) The strict Zanger filters (3× volume + volume dry-up + tight base + leader + growth) are
+too rare in large/mid caps to trade. (2) The exit pair "stop 7% below pivot + close under SMA20" loses money:
+breakout entries without the volume rules give PF ≈ 1.0 with it, random entries lose 1–3%/yr — same lesson as (9),
+exits carry the result, and W1's ATR trailing exit (PF ≈ 2) is far better. (3) Zanger entries + W1 exits did well in
+search (PF 2.3, B) but broke in validate (PF 0.5) on few trades. Holdouts stay sealed.
